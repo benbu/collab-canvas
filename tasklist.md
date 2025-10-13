@@ -495,20 +495,20 @@ collab-canvas/
   * [x] Vite app, deps, lint/test, CI, Vercel baseline
 * PR#2 Canvas ✅
 
-  * [ ] Pan/zoom, grid, throttle, resize-aware
-  * [ ] Tests: unit + integration
+  * [x] Pan/zoom, grid, throttle, resize-aware
+  * [x] Tests: unit + integration
 * PR#3 Create ✅
 
-  * [ ] Toolbar, state model, creation flow
-  * [ ] Tests: reducers (unit), creation (integration)
+  * [x] Toolbar, state model, creation flow
+  * [x] Tests: reducers (unit), creation (integration)
 * PR#4 Manipulate ✅
 
-  * [ ] Select, drag, transform, delete/duplicate
-  * [ ] Tests: interaction integration
+  * [x] Select, drag, transform, delete/duplicate
+  * [x] Tests: interaction integration
 * PR#5 Sync ✅
 
-  * [ ] Firebase init, listeners, writers, debounced deltas, LWW
-  * [ ] Tests: emulator integration, write throttling
+  * [x] Firebase init, listeners, writers, debounced deltas, LWW
+  * [x] Tests: emulator integration, write throttling
 * PR#6 Cursors ✅
 
   * [ ] Cursor schema, throttle writes, render labels
