@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import { Stage, Layer, Line, Rect, Circle, Text } from 'react-konva'
 import { throttle } from '../../utils/throttle'
 import './Canvas.css'
@@ -214,31 +214,31 @@ export default function Canvas() {
 
             if (s.type === 'rect') {
               return (
-                <>
-                  <Rect key={id} {...common} width={s.width ?? 0} height={s.height ?? 0} fill={s.fill} />
+                <Fragment key={id}>
+                  <Rect {...common} width={s.width ?? 0} height={s.height ?? 0} fill={s.fill} />
                   {isSelected && (
                     <Rect data-testid="rect-outline" x={s.x - 2} y={s.y - 2} width={(s.width ?? 0) + 4} height={(s.height ?? 0) + 4} stroke="#1976d2" listening={false} />
                   )}
-                </>
+                </Fragment>
               )
             }
             if (s.type === 'circle') {
               return (
-                <>
-                  <Circle key={id} {...common} radius={s.radius ?? 0} fill={s.fill} />
+                <Fragment key={id}>
+                  <Circle {...common} radius={s.radius ?? 0} fill={s.fill} />
                   {isSelected && (
                     <Circle data-testid="circle-outline" x={s.x} y={s.y} radius={(s.radius ?? 0) + 4} stroke="#1976d2" listening={false} />
                   )}
-                </>
+                </Fragment>
               )
             }
             return (
-              <>
-                <Text key={id} {...common} text={s.text ?? ''} fontSize={s.fontSize ?? 18} fill={s.fill} />
+              <Fragment key={id}>
+                <Text {...common} text={s.text ?? ''} fontSize={s.fontSize ?? 18} fill={s.fill} />
                 {isSelected && (
                   <Rect data-testid="text-outline" x={s.x - 2} y={s.y - 16} width={(s.text?.length ?? 1) * 9} height={s.fontSize ?? 18} stroke="#1976d2" listening={false} />
                 )}
-              </>
+              </Fragment>
             )
           })}
         </Layer>
