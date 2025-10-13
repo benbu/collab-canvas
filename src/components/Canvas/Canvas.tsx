@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Stage, Layer, Line, Rect, Circle, Text } from 'react-konva'
 import { throttle } from '../../utils/throttle'
 import './Canvas.css'
-import Toolbar, { Tool } from '../Toolbar/Toolbar'
+import Toolbar from '../Toolbar/Toolbar'
+import type { Tool } from '../Toolbar/Toolbar'
 import { useCanvasState } from '../../hooks/useCanvasState'
 
 const MIN_SCALE = 0.25
