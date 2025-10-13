@@ -18,7 +18,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/room/default" element={<Room />} />
+        <Route path="/room/:roomId" element={<Room />} />
         <Route path="*" element={<Navigate to="/room/default" replace />} />
       </Routes>
     </BrowserRouter>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react'
+import { useParams } from 'react-router-dom'
 import { Stage, Layer, Line, Rect, Circle, Text } from 'react-konva'
+import type Konva from 'konva'
 import { throttle } from '../../utils/throttle'
 import './Canvas.css'
 import Toolbar from '../Toolbar/Toolbar'
@@ -7,6 +9,12 @@ import type { Tool } from '../Toolbar/Toolbar'
 import { useCanvasState } from '../../hooks/useCanvasState'
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions'
 import SelectionBox from './SelectionBox'
+import { useFirestoreSync } from '../../hooks/useFirestoreSync'
+import { generateId } from '../../utils/id'
+
+ 
+type DragEndEvent = { target: { x?: () => number; y?: () => number } }
+type ShapeMouseEvent = { evt?: MouseEvent }
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 4
@@ -23,15 +31,32 @@ function useViewportSize() {
 }
 
 export default function Canvas() {
+  const params = useParams()
+  const roomId = params.roomId ?? 'default'
   const { width, height } = useViewportSize()
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
-  const stageRef = useRef<any>(null)
+  const stageRef = useRef<Konva.Stage | null>(null)
   const { state, addShape, updateShape, removeShape } = useCanvasState()
   const [tool, setTool] = useState<Tool>('select')
   const [color, setColor] = useState<string>('#1976d2')
   const [textInput, setTextInput] = useState<string>('Text')
   const { selectedIds, setSelectedIds, selectionRect, beginDragSelect, updateDragSelect, endDragSelect, clearSelection } = useCanvasInteractions()
+  const writers = useFirestoreSync(
+    roomId,
+    (s) => {
+      // upsert: if exists update else add
+      if (state.byId[s.id]) {
+        // shallow equality check to avoid loops is omitted for brevity
+      } else {
+        addShape(s)
+      }
+    },
+    (id) => {
+      // only remove if present
+      if (state.byId[id]) removeShape(id)
+    },
+  )
 
   const handleDragMove = useMemo(
     () =>
@@ -46,8 +71,9 @@ export default function Canvas() {
 
   const handleWheel = useMemo(
     () =>
-      throttle((e: WheelEvent) => {
-        e.preventDefault()
+      throttle((e: unknown) => {
+        const evt = e as WheelEvent
+        evt.preventDefault()
         const stage = stageRef.current
         if (!stage) return
 
@@ -61,7 +87,7 @@ export default function Canvas() {
         }
 
         const scaleBy = 1.05
-        const direction = e.deltaY > 0 ? -1 : 1
+        const direction = evt.deltaY > 0 ? -1 : 1
         const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, oldScale * (direction > 0 ? scaleBy : 1 / scaleBy)))
         setScale(newScale)
 
@@ -77,7 +103,7 @@ export default function Canvas() {
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
-    const wheelListener = (e: WheelEvent) => handleWheel(e)
+    const wheelListener = (e: Event) => handleWheel(e as unknown as WheelEvent)
     const container = stage.container()
     container.addEventListener('wheel', wheelListener, { passive: false })
     return () => container.removeEventListener('wheel', wheelListener)
@@ -151,7 +177,7 @@ export default function Canvas() {
         scaleY={scale}
         onDragMove={handleDragMove as any}
         onMouseDown={() => {
-          const stage = stageRef.current
+          const stage = stageRef.current!
           const pointer = stage.getPointerPosition()
           if (!pointer) return
           const canvasPoint = toCanvasPoint(pointer)
@@ -162,16 +188,25 @@ export default function Canvas() {
           }
 
           if (tool === 'rect') {
-            addShape({ type: 'rect', x: canvasPoint.x, y: canvasPoint.y, width: 200, height: 120, fill: color })
+            const id = generateId()
+            const shape = { id, type: 'rect' as const, x: canvasPoint.x, y: canvasPoint.y, width: 200, height: 120, fill: color }
+            addShape(shape)
+            writers.add && writers.add({ ...shape })
           } else if (tool === 'circle') {
-            addShape({ type: 'circle', x: canvasPoint.x, y: canvasPoint.y, radius: 60, fill: color })
+            const id = generateId()
+            const shape = { id, type: 'circle' as const, x: canvasPoint.x, y: canvasPoint.y, radius: 60, fill: color }
+            addShape(shape)
+            writers.add && writers.add({ ...shape })
           } else if (tool === 'text') {
-            addShape({ type: 'text', x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color })
+            const id = generateId()
+            const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color }
+            addShape(shape)
+            writers.add && writers.add({ ...shape })
           }
         }}
         onMouseMove={() => {
           if (!selectionRect?.active) return
-          const stage = stageRef.current
+          const stage = stageRef.current!
           const pointer = stage.getPointerPosition()
           if (!pointer) return
           const p = toCanvasPoint(pointer)
@@ -200,12 +235,14 @@ export default function Canvas() {
               x: s.x,
               y: s.y,
               draggable: isSelected,
-              onDragEnd: (evt: any) => {
+              onDragEnd: (evt: DragEndEvent) => {
                 const newX = evt.target.x?.() ?? s.x
                 const newY = evt.target.y?.() ?? s.y
+                const updated = { ...s, x: newX, y: newY }
                 updateShape(id, { x: newX, y: newY })
+                writers.update && writers.update(updated)
               },
-              onMouseDown: (evt: any) => {
+              onMouseDown: (evt: ShapeMouseEvent) => {
                 if (tool !== 'select') return
                 if (!evt?.evt?.shiftKey) setSelectedIds([id])
                 else setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))

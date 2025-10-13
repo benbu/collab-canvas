@@ -29,9 +29,10 @@ function reducer(state: State, action: Action): State {
     case 'add': {
       const id = action.payload.id ?? generateId()
       const next: Shape = { id, ...action.payload }
+      const exists = state.allIds.includes(id)
       return {
         byId: { ...state.byId, [id]: next },
-        allIds: [...state.allIds, id],
+        allIds: exists ? state.allIds : [...state.allIds, id],
       }
     }
     case 'update': {
@@ -41,7 +42,7 @@ function reducer(state: State, action: Action): State {
       return { byId: { ...state.byId, [updated.id]: updated }, allIds: state.allIds }
     }
     case 'remove': {
-      const { [action.payload.id]: _, ...rest } = state.byId
+      const { [action.payload.id]: _omit, ...rest } = state.byId
       return { byId: rest, allIds: state.allIds.filter((i) => i !== action.payload.id) }
     }
     default:
