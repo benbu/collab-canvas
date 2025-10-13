@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Stage, Layer, Line } from 'react-konva'
+import { Stage, Layer, Line, Rect, Circle, Text } from 'react-konva'
 import { throttle } from '../../utils/throttle'
 import './Canvas.css'
+import Toolbar, { Tool } from '../Toolbar/Toolbar'
+import { useCanvasState } from '../../hooks/useCanvasState'
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 4
@@ -22,6 +24,10 @@ export default function Canvas() {
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const stageRef = useRef<any>(null)
+  const { state, addShape } = useCanvasState()
+  const [tool, setTool] = useState<Tool>('select')
+  const [color, setColor] = useState<string>('#1976d2')
+  const [textInput, setTextInput] = useState<string>('Text')
 
   const handleDragMove = useMemo(
     () =>
@@ -94,6 +100,14 @@ export default function Canvas() {
 
   return (
     <div className="canvasRoot">
+      <Toolbar
+        activeTool={tool}
+        onToolChange={setTool}
+        color={color}
+        onColorChange={setColor}
+        text={textInput}
+        onTextChange={setTextInput}
+      />
       <Stage
         ref={stageRef}
         width={width}
@@ -104,9 +118,37 @@ export default function Canvas() {
         scaleX={scale}
         scaleY={scale}
         onDragMove={handleDragMove as any}
+        onMouseDown={(e: any) => {
+          if (tool === 'select') return
+          const stage = stageRef.current
+          const pointer = stage.getPointerPosition()
+          if (!pointer) return
+          const canvasPoint = {
+            x: (pointer.x - position.x) / scale,
+            y: (pointer.y - position.y) / scale,
+          }
+          if (tool === 'rect') {
+            addShape({ type: 'rect', x: canvasPoint.x, y: canvasPoint.y, width: 200, height: 120, fill: color })
+          } else if (tool === 'circle') {
+            addShape({ type: 'circle', x: canvasPoint.x, y: canvasPoint.y, radius: 60, fill: color })
+          } else if (tool === 'text') {
+            addShape({ type: 'text', x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color })
+          }
+        }}
       >
         <Layer listening={false}>{gridLines}</Layer>
-        <Layer>{/* shapes would go here */}</Layer>
+        <Layer>
+          {state.allIds.map((id) => {
+            const s = state.byId[id]
+            if (s.type === 'rect') {
+              return <Rect key={id} x={s.x} y={s.y} width={s.width ?? 0} height={s.height ?? 0} fill={s.fill} />
+            }
+            if (s.type === 'circle') {
+              return <Circle key={id} x={s.x} y={s.y} radius={s.radius ?? 0} fill={s.fill} />
+            }
+            return <Text key={id} x={s.x} y={s.y} text={s.text ?? ''} fontSize={s.fontSize ?? 18} fill={s.fill} />
+          })}
+        </Layer>
       </Stage>
     </div>
   )
