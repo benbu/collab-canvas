@@ -3,10 +3,9 @@ import { render, screen } from '@testing-library/react'
 import App from '../../../src/App'
 
 describe('App smoke test', () => {
-  it('renders the placeholder canvas route', () => {
+  it('renders the canvas stage', () => {
     render(<App />)
-    const el = screen.getByText(/Placeholder canvas route/i)
-    expect(el).toBeTruthy()
+    expect(screen.getByTestId('stage')).toBeTruthy()
   })
 })
 
