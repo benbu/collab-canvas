@@ -1,7 +1,4 @@
-export function throttle<T extends (...args: any[]) => void>(
-  callback: T,
-  waitMs: number,
-) {
+export function throttle<T extends (...args: unknown[]) => void>(callback: T, waitMs: number) {
   let lastCallTime = 0
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   let lastArgs: Parameters<T> | null = null

@@ -1,5 +1,3 @@
-import { useState } from 'react'
-
 export type Tool = 'select' | 'rect' | 'circle' | 'text'
 
 export default function Toolbar(props: {
