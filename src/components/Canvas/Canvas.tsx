@@ -11,6 +11,8 @@ import { useCanvasInteractions } from '../../hooks/useCanvasInteractions'
 import SelectionBox from './SelectionBox'
 import { useFirestoreSync } from '../../hooks/useFirestoreSync'
 import { generateId } from '../../utils/id'
+import CursorLayer from './CursorLayer'
+import { useCursorSync } from '../../hooks/useCursorSync'
 
  
 type DragEndEvent = { target: { x?: () => number; y?: () => number } }
@@ -57,6 +59,8 @@ export default function Canvas() {
       if (state.byId[id]) removeShape(id)
     },
   )
+
+  const cursorSync = useCursorSync(roomId, 'self', () => stageRef.current?.getPointerPosition() ?? null)
 
   const handleDragMove = useMemo(
     () =>
@@ -279,6 +283,7 @@ export default function Canvas() {
             )
           })}
         </Layer>
+        <CursorLayer cursors={cursorSync.cursors} />
       </Stage>
     </div>
   )
