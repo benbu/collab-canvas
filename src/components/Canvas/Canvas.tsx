@@ -12,6 +12,7 @@ import SelectionBox from './SelectionBox'
 import { useFirestoreSync } from '../../hooks/useFirestoreSync'
 import { generateId } from '../../utils/id'
 import CursorLayer from './CursorLayer'
+import PresenceIndicator from '../Presence/PresenceIndicator'
 import { useCursorSync } from '../../hooks/useCursorSync'
 
  
@@ -159,6 +160,7 @@ export default function Canvas() {
 
   return (
     <div className="canvasRoot">
+      <PresenceIndicator roomId={roomId} selfId={'self'} />
       <Toolbar
         activeTool={tool}
         onToolChange={(t) => {
