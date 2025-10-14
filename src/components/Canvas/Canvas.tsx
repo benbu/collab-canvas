@@ -172,22 +172,20 @@ export default function Canvas() {
 
   const gridLines = useMemo(() => {
     const lines = [] as JSX.Element[]
-    const cols = Math.ceil(width / GRID_SIZE) + 2
-    const rows = Math.ceil(height / GRID_SIZE) + 2
-    for (let i = -1; i < cols; i++) {
-      const x = i * GRID_SIZE
+    const start = -2500
+    const end = 2500
+    for (let x = start; x <= end; x += GRID_SIZE) {
       lines.push(
-        <Line key={`v-${i}`} points={[x, 0, x, height]} stroke="#eee" strokeWidth={1} listening={false} />,
+        <Line key={`v-${x}`} points={[x, start, x, end]} stroke="#eee" strokeWidth={1} listening={false} />,
       )
     }
-    for (let j = -1; j < rows; j++) {
-      const y = j * GRID_SIZE
+    for (let y = start; y <= end; y += GRID_SIZE) {
       lines.push(
-        <Line key={`h-${j}`} points={[0, y, width, y]} stroke="#eee" strokeWidth={1} listening={false} />,
+        <Line key={`h-${y}`} points={[start, y, end, y]} stroke="#eee" strokeWidth={1} listening={false} />,
       )
     }
     return lines
-  }, [width, height])
+  }, [])
 
   const toCanvasPoint = useCallback(
     (client: { x: number; y: number }) => ({ x: (client.x - position.x) / scale, y: (client.y - position.y) / scale }),
