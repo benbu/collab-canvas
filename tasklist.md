@@ -531,6 +531,6 @@ collab-canvas/
 * PR#11 QA/Perf ✅
   
   * [x] Flood 500 shapes, multi-user, network throttle (manual)
-* PR#12 Deploy
-
-  * [ ] Env, rules, smoke test, tag release (manual)
+* PR#12 Deploy ✅
+  
+  * [x] Env, rules, smoke test, tag release (manual)
