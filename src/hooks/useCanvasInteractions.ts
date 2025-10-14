@@ -1,11 +1,14 @@
 import { useCallback, useMemo, useState } from 'react'
 
-export function useCanvasInteractions() {
+type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text'
+
+export function useCanvasInteractions(tool?: Tool) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [selectionRect, setSelectionRect] = useState<
     | null
     | { x: number; y: number; w: number; h: number; active: boolean; originX: number; originY: number }
   >(null)
+  const [isDraggingShape, setIsDraggingShape] = useState(false)
 
   const selectOne = useCallback((id: string) => setSelectedIds([id]), [])
   const toggleSelect = useCallback(
@@ -28,9 +31,27 @@ export function useCanvasInteractions() {
   }, [])
   const endDragSelect = useCallback(() => setSelectionRect((prev) => (prev ? { ...prev, active: false } : prev)), [])
 
+  const stageDraggable = tool === 'pan' && !isDraggingShape
+
   return useMemo(
-    () => ({ selectedIds, setSelectedIds, selectOne, toggleSelect, clearSelection, selectionRect, beginDragSelect, updateDragSelect, endDragSelect }),
-    [selectedIds, selectOne, toggleSelect, clearSelection, selectionRect, beginDragSelect, updateDragSelect, endDragSelect],
+    () => ({
+      // selection state
+      selectedIds,
+      setSelectedIds,
+      selectOne,
+      toggleSelect,
+      clearSelection,
+      selectionRect,
+      beginDragSelect,
+      updateDragSelect,
+      endDragSelect,
+      // shape drag helpers
+      isDraggingShape,
+      setIsDraggingShape,
+      // stage
+      stageDraggable,
+    }),
+    [selectedIds, selectOne, toggleSelect, clearSelection, selectionRect, beginDragSelect, updateDragSelect, endDragSelect, isDraggingShape, stageDraggable],
   )
 }
 

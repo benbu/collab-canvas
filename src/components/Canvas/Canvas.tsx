@@ -49,7 +49,17 @@ export default function Canvas() {
   const [tool, setTool] = useState<Tool>('select')
   const [color, setColor] = useState<string>('#1976d2')
   const [textInput, setTextInput] = useState<string>('Text')
-  const { selectedIds, setSelectedIds, selectionRect, beginDragSelect, updateDragSelect, endDragSelect, clearSelection } = useCanvasInteractions()
+  const {
+    selectedIds,
+    setSelectedIds,
+    selectionRect,
+    beginDragSelect,
+    updateDragSelect,
+    endDragSelect,
+    clearSelection,
+    stageDraggable,
+    setIsDraggingShape,
+  } = useCanvasInteractions(tool)
   const writers = useFirestoreSync(
     roomId,
     (s) => {
@@ -141,7 +151,10 @@ export default function Canvas() {
     const keyHandler = (e: KeyboardEvent) => {
       if (selectedIds.length === 0) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        selectedIds.forEach((id) => removeShape(id))
+        selectedIds.forEach((id) => {
+          removeShape(id)
+          writers.remove && writers.remove(id)
+        })
         setSelectedIds([])
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
@@ -226,7 +239,7 @@ export default function Canvas() {
         ref={stageRef}
         width={width}
         height={height}
-        draggable={tool === 'select'}
+        draggable={stageDraggable}
         x={position.x}
         y={position.y}
         scaleX={scale}
@@ -321,12 +334,14 @@ export default function Canvas() {
               x: s.x,
               y: s.y,
               draggable: isSelected,
+              onDragStart: () => setIsDraggingShape(true),
               onDragEnd: (evt: DragEndEvent) => {
                 const newX = evt.target.x?.() ?? s.x
                 const newY = evt.target.y?.() ?? s.y
                 const updated = { ...s, x: newX, y: newY }
                 updateShape(id, { x: newX, y: newY })
                 writers.update && writers.update(updated)
+                setIsDraggingShape(false)
               },
               onMouseDown: (evt: ShapeMouseEvent) => {
                 if (tool !== 'select') return

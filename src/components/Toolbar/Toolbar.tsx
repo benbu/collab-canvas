@@ -1,4 +1,4 @@
-export type Tool = 'select' | 'rect' | 'circle' | 'text'
+export type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text'
 
 export default function Toolbar(props: {
   activeTool: Tool
@@ -11,13 +11,15 @@ export default function Toolbar(props: {
   const { activeTool, onToolChange, color, onColorChange, text, onTextChange } = props
   return (
     <div className="toolbarRoot">
-      {(['select', 'rect', 'circle', 'text'] as Tool[]).map((t) => (
+      {(['pan', 'select', 'rect', 'circle', 'text'] as Tool[]).map((t) => (
         <button
           key={t}
           onClick={() => onToolChange(t)}
           className={activeTool === t ? 'toolBtn active' : 'toolBtn'}
           title={
-            t === 'select'
+            t === 'pan'
+              ? 'Pan (H)'
+              : t === 'select'
               ? 'Select (V)'
               : t === 'rect'
               ? 'Rectangle (R)'
