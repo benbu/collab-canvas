@@ -6,16 +6,15 @@ export default function CursorLayer(props: { cursors: RemoteCursor[] }) {
   return (
     <Layer listening={false}>
       {cursors.map((c) => (
-        <>
+        <g key={c.id}>
           <Line
-            key={`${c.id}-ptr`}
             points={[c.x, c.y, c.x - 8, c.y + 16, c.x + 8, c.y + 16]}
             closed
             fill={c.color}
             stroke={c.color}
           />
-          <Text key={`${c.id}-label`} x={c.x + 10} y={c.y + 10} text={c.name ?? c.id.slice(0, 4)} fontSize={12} fill={c.color} />
-        </>
+          <Text x={c.x + 10} y={c.y + 10} text={c.name ?? c.id.slice(0, 4)} fontSize={12} fill={c.color} />
+        </g>
       ))}
     </Layer>
   )

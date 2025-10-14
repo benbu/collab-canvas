@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { db, isFirebaseEnabled } from '../services/firebase'
 import {
   collection,
@@ -17,13 +17,19 @@ type Writer = {
   remove: (id: string) => Promise<void>
 }
 
-export function useFirestoreSync(roomId: string, onRemoteUpsert: (s: Shape) => void, onRemoteRemove: (id: string) => void): Writer {
+export function useFirestoreSync(
+  roomId: string,
+  onRemoteUpsert: (s: Shape) => void,
+  onRemoteRemove: (id: string) => void,
+): Writer & { ready: boolean } {
   const pendingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const [ready, setReady] = useState(!isFirebaseEnabled)
 
   const writers = useMemo<Writer>(() => ({
     add: async (shape: Shape) => {
       if (!isFirebaseEnabled || !db) return
-      const ref = doc(db, 'rooms', roomId, 'shapes', shape.id)
+      const database = db!
+      const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
       await setDoc(
         ref,
         {
@@ -44,6 +50,7 @@ export function useFirestoreSync(roomId: string, onRemoteUpsert: (s: Shape) => v
     },
     update: async (shape: Shape) => {
       if (!isFirebaseEnabled || !db) return
+      const database = db!
       // debounce per-shape to ~30ms
       const key = shape.id
       if (pendingTimers.current[key]) {
@@ -51,7 +58,7 @@ export function useFirestoreSync(roomId: string, onRemoteUpsert: (s: Shape) => v
       }
       await new Promise<void>((resolve) => {
         pendingTimers.current[key] = setTimeout(async () => {
-          const ref = doc(db, 'rooms', roomId, 'shapes', shape.id)
+          const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
           await setDoc(
             ref,
             {
@@ -75,7 +82,8 @@ export function useFirestoreSync(roomId: string, onRemoteUpsert: (s: Shape) => v
     },
     remove: async (id: string) => {
       if (!isFirebaseEnabled || !db) return
-      const ref = doc(db, 'rooms', roomId, 'shapes', id)
+      const database = db!
+      const ref = doc(database, 'rooms', roomId, 'shapes', id)
       await deleteDoc(ref)
     },
   }), [roomId])
@@ -105,11 +113,12 @@ export function useFirestoreSync(roomId: string, onRemoteUpsert: (s: Shape) => v
           onRemoteUpsert(shape)
         }
       })
+      if (!ready) setReady(true)
     })
     return () => unsub()
-  }, [roomId, onRemoteUpsert, onRemoteRemove])
+  }, [roomId, onRemoteUpsert, onRemoteRemove, ready])
 
-  return writers
+  return { ...writers, ready }
 }
 
 

@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import Canvas from '../Canvas'
+import { AuthProvider } from '../../../contexts/AuthContext'
 
 describe('Interactions', () => {
   it('delete removes created rect', () => {
-    render(<Canvas />)
+    render(
+      <AuthProvider>
+        <Canvas />
+      </AuthProvider>,
+    )
     fireEvent.click(screen.getByRole('button', { name: /rect/i }))
     fireEvent.mouseDown(screen.getByTestId('stage'), { clientX: 120, clientY: 120 })
     expect(screen.getAllByTestId('rect').length).toBeGreaterThan(0)
@@ -20,7 +25,11 @@ describe('Interactions', () => {
   })
 
   it('duplicate via Cmd/Ctrl+D adds another shape', () => {
-    render(<Canvas />)
+    render(
+      <AuthProvider>
+        <Canvas />
+      </AuthProvider>,
+    )
     fireEvent.click(screen.getByRole('button', { name: /rect/i }))
     fireEvent.mouseDown(screen.getByTestId('stage'), { clientX: 120, clientY: 120 })
     fireEvent.click(screen.getByRole('button', { name: /select/i }))
