@@ -12,7 +12,7 @@ import SelectionBox from './SelectionBox'
 import { useFirestoreSync } from '../../hooks/useFirestoreSync'
 import { generateId } from '../../utils/id'
 import CursorLayer from './CursorLayer'
-import PresenceIndicator from '../Presence/PresenceIndicator'
+import PresenceList from '../Presence/PresenceList'
 import { useCursorSync } from '../../hooks/useCursorSync'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePersistence } from '../../hooks/usePersistence'
@@ -188,7 +188,7 @@ export default function Canvas() {
           <div className="spinner" />
         </div>
       )}
-      <PresenceIndicator roomId={roomId} selfId={selfId} />
+      <PresenceList selfId={selfId} cursors={(cursorSync as any).allCursors} />
       <Toolbar
         activeTool={tool}
         onToolChange={(t) => {
