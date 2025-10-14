@@ -13,6 +13,7 @@
     "format:write": "prettier --write ."
   },
   "dependencies": {
+    "@mrzacsmith/cursor-rules": "^0.7.1",
     "classnames": "^2.5.1",
     "firebase": "^12.4.0",
     "konva": "^9.3.16",
