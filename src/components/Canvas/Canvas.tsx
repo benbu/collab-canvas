@@ -201,7 +201,7 @@ export default function Canvas() {
         onTextChange={setTextInput}
       />
       {import.meta.env.DEV && (
-        <div style={{ position: 'fixed', bottom: 12, left: 12, display: 'flex', gap: 8 }}>
+        <div style={{ position: 'fixed', bottom: 12, left: 12, display: 'flex', gap: 8, zIndex: 10 }}>
           <button
             onClick={() => {
               const seeds = generateSeedRectangles(500)
