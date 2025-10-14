@@ -48,7 +48,8 @@ export function usePersistence(
       if (writing.current) return
       writing.current = true
       try {
-        const ref = doc(db, 'rooms', roomId, 'meta', 'snapshot')
+        const database = db!
+        const ref = doc(database, 'rooms', roomId, 'meta', 'snapshot')
         const shapesById: Record<string, any> = {}
         for (const id of state.allIds) {
           const s = state.byId[id]
