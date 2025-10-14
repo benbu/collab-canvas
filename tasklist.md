@@ -511,12 +511,12 @@ collab-canvas/
   * [x] Tests: emulator integration, write throttling
 * PR#6 Cursors ✅
 
-  * [ ] Cursor schema, throttle writes, render labels
-  * [ ] Tests: emulator integration
+  * [x] Cursor schema, throttle writes, render labels
+  * [x] Tests: emulator integration
 * PR#7 Presence ✅
 
-  * [ ] Heartbeat + UI
-  * [ ] Tests: unit (timers)
+  * [x] Heartbeat + UI
+  * [x] Tests: unit (timers)
 * PR#8 Auth ✅
 
   * [ ] Anonymous auth + display name + context
