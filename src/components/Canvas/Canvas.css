@@ -2,6 +2,7 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  position: relative;
 }
 
 .loaderOverlay {
@@ -37,6 +38,7 @@
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   display: flex;
   gap: 8px;
+  z-index: 10;
 }
 
 .toolBtn {
@@ -49,6 +51,12 @@
 .toolBtn.active {
   background: #eef;
   border-color: #1976d2;
+}
+
+/* Ensure Konva container stays below overlays */
+.canvasRoot .konvajs-content {
+  position: relative;
+  z-index: 0;
 }
 
 
