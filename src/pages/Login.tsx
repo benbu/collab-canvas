@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
-  const { user, displayName, setDisplayName } = useAuth()
+  const { displayName, setDisplayName } = useAuth()
   const [name, setName] = useState(displayName ?? '')
   const navigate = useNavigate()
 

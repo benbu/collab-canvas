@@ -18,9 +18,10 @@ export function AuthProvider(props: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isFirebaseEnabled || !auth) return
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const a = auth
+    const unsub = onAuthStateChanged(a, async (u) => {
       if (!u) {
-        await signInAnonymously(auth)
+        await signInAnonymously(a)
         return
       }
       setUser(u)
