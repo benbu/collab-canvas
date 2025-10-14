@@ -14,6 +14,7 @@ import { generateId } from '../../utils/id'
 import CursorLayer from './CursorLayer'
 import PresenceIndicator from '../Presence/PresenceIndicator'
 import { useCursorSync } from '../../hooks/useCursorSync'
+import { useAuth } from '../../contexts/AuthContext'
 
  
 type DragEndEvent = { target: { x?: () => number; y?: () => number } }
@@ -36,6 +37,8 @@ function useViewportSize() {
 export default function Canvas() {
   const params = useParams()
   const roomId = params.roomId ?? 'default'
+  const { user } = useAuth()
+  const selfId = user?.uid ?? 'self'
   const { width, height } = useViewportSize()
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
@@ -61,7 +64,7 @@ export default function Canvas() {
     },
   )
 
-  const cursorSync = useCursorSync(roomId, 'self', () => stageRef.current?.getPointerPosition() ?? null)
+  const cursorSync = useCursorSync(roomId, selfId, () => stageRef.current?.getPointerPosition() ?? null)
 
   const handleDragMove = useMemo(
     () =>
@@ -160,7 +163,7 @@ export default function Canvas() {
 
   return (
     <div className="canvasRoot">
-      <PresenceIndicator roomId={roomId} selfId={'self'} />
+      <PresenceIndicator roomId={roomId} selfId={selfId} />
       <Toolbar
         activeTool={tool}
         onToolChange={(t) => {
