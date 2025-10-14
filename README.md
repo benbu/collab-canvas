@@ -71,3 +71,60 @@ export default defineConfig([
   },
 ])
 ```
+
+## Deployment
+
+### Environment variables
+
+Create `.env` (or set these on your host) with Firebase config:
+
+```
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+```
+
+`.env.example` shows the required keys. `.env` is git-ignored.
+
+### Vercel
+
+- In your Vercel project, add the `VITE_FIREBASE_*` env vars above.
+- Build command: `npm run build`, output: `dist` (configured in `vercel.json`).
+- Trigger a deploy from your repository.
+
+### Firebase Firestore rules
+
+This repo includes permissive MVP rules in `firestore.rules` and `firebase.json`:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rooms/{roomId}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+Deploy rules (requires Firebase CLI and a configured project):
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+### Local development
+
+```bash
+npm install
+npm run dev
+```
+
+### Tests
+
+```bash
+npm test -- --run
+```
