@@ -15,6 +15,8 @@ import CursorLayer from './CursorLayer'
 import PresenceIndicator from '../Presence/PresenceIndicator'
 import { useCursorSync } from '../../hooks/useCursorSync'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePersistence } from '../../hooks/usePersistence'
+import { generateSeedRectangles, measureFpsFor } from '../../utils/devSeed'
 
  
 type DragEndEvent = { target: { x?: () => number; y?: () => number } }
@@ -37,7 +39,7 @@ function useViewportSize() {
 export default function Canvas() {
   const params = useParams()
   const roomId = params.roomId ?? 'default'
-  const { user } = useAuth()
+  const { user, displayName } = useAuth()
   const selfId = user?.uid ?? 'self'
   const { width, height } = useViewportSize()
   const [scale, setScale] = useState(1)
@@ -64,7 +66,25 @@ export default function Canvas() {
     },
   )
 
-  const cursorSync = useCursorSync(roomId, selfId, () => stageRef.current?.getPointerPosition() ?? null)
+  const colorFromId = useMemo(() => {
+    const str = selfId
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i)
+      hash |= 0
+    }
+    const hue = Math.abs(hash) % 360
+    return `hsl(${hue}, 70%, 50%)`
+  }, [selfId])
+
+  const cursorSync = useCursorSync(
+    roomId,
+    selfId,
+    () => stageRef.current?.getPointerPosition() ?? null,
+    displayName ?? undefined,
+    colorFromId,
+  )
+  const { hydrated } = usePersistence(roomId, state, addShape)
 
   const handleDragMove = useMemo(
     () =>
@@ -163,6 +183,11 @@ export default function Canvas() {
 
   return (
     <div className="canvasRoot">
+      {!(hydrated && (writers as any).ready) && (
+        <div className="loaderOverlay" aria-busy>
+          <div className="spinner" />
+        </div>
+      )}
       <PresenceIndicator roomId={roomId} selfId={selfId} />
       <Toolbar
         activeTool={tool}
@@ -175,6 +200,28 @@ export default function Canvas() {
         text={textInput}
         onTextChange={setTextInput}
       />
+      {import.meta.env.DEV && (
+        <div style={{ position: 'fixed', bottom: 12, left: 12, display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => {
+              const seeds = generateSeedRectangles(500)
+              seeds.forEach((s) => addShape(s as any))
+            }}
+          >
+            Seed 500
+          </button>
+          <button
+            onClick={() => {
+              measureFpsFor(1000, (fps) => {
+                // eslint-disable-next-line no-console
+                console.log('FPS ~', Math.round(fps))
+              })
+            }}
+          >
+            Measure FPS
+          </button>
+        </div>
+      )}
       <Stage
         ref={stageRef}
         width={width}
@@ -185,6 +232,36 @@ export default function Canvas() {
         scaleX={scale}
         scaleY={scale}
         onDragMove={handleDragMove as any}
+        onTouchStart={(e: any) => {
+          if (tool !== 'select') return
+          const stage = stageRef.current
+          if (!stage) return
+          const touches = (e?.evt as TouchEvent)?.touches
+          if (touches && touches.length === 2) {
+            const dist = Math.hypot(
+              touches[0].clientX - touches[1].clientX,
+              touches[0].clientY - touches[1].clientY,
+            )
+            ;(stage as any)._pinchDist = dist
+            ;(stage as any)._pinchScale = scale
+          }
+        }}
+        onTouchMove={(e: any) => {
+          const stage = stageRef.current
+          if (!stage) return
+          const touches = (e?.evt as TouchEvent)?.touches
+          if (touches && touches.length === 2) {
+            e.evt.preventDefault()
+            const dist = Math.hypot(
+              touches[0].clientX - touches[1].clientX,
+              touches[0].clientY - touches[1].clientY,
+            )
+            const start = (stage as any)._pinchDist || dist
+            const baseScale = (stage as any)._pinchScale || scale
+            const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, baseScale * (dist / start)))
+            setScale(next)
+          }
+        }}
         onMouseDown={() => {
           const stage = stageRef.current!
           const pointer = stage.getPointerPosition()

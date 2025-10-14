@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { db, isFirebaseEnabled } from '../services/firebase'
-import { collection, doc, onSnapshot, serverTimestamp, setDoc, deleteDoc } from 'firebase/firestore'
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 
 export type RemoteCursor = { id: string; x: number; y: number; color: string; name?: string; updatedAt: number }
 
 function nowMs() { return Date.now() }
 
-export function useCursorSync(roomId: string, selfId: string, getPointer: () => { x: number; y: number } | null) {
+export function useCursorSync(
+  roomId: string,
+  selfId: string,
+  getPointer: () => { x: number; y: number } | null,
+  selfName?: string,
+  selfColor?: string,
+) {
   const [cursors, setCursors] = useState<Record<string, RemoteCursor>>({})
   const lastWrite = useRef(0)
 
@@ -42,12 +48,17 @@ export function useCursorSync(roomId: string, selfId: string, getPointer: () => 
       if (!p) return
       if (t - lastWrite.current < 80) return // ~12.5 fps
       lastWrite.current = t
-      const ref = doc(db, 'rooms', roomId, 'cursors', selfId)
-      void setDoc(ref, { x: p.x, y: p.y, updatedAt: serverTimestamp() }, { merge: true })
+      const database = db!
+      const ref = doc(database, 'rooms', roomId, 'cursors', selfId)
+      void setDoc(
+        ref,
+        { x: p.x, y: p.y, updatedAt: serverTimestamp(), name: selfName, color: selfColor },
+        { merge: true },
+      )
     }
     window.addEventListener('mousemove', onMove)
     return () => window.removeEventListener('mousemove', onMove)
-  }, [roomId, selfId, getPointer])
+  }, [roomId, selfId, getPointer, selfName, selfColor])
 
   const visibleCursors = useMemo(() => {
     const cutoff = nowMs() - 2000

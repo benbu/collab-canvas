@@ -10,17 +10,21 @@ export default function Toolbar(props: {
 }) {
   const { activeTool, onToolChange, color, onColorChange, text, onTextChange } = props
   return (
-    <div style={{ position: 'fixed', top: 12, left: 12, background: '#fff', padding: 8, borderRadius: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.15)', display: 'flex', gap: 8 }}>
+    <div className="toolbarRoot">
       {(['select', 'rect', 'circle', 'text'] as Tool[]).map((t) => (
         <button
           key={t}
           onClick={() => onToolChange(t)}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 4,
-            border: '1px solid #ddd',
-            background: activeTool === t ? '#eef' : '#fafafa',
-          }}
+          className={activeTool === t ? 'toolBtn active' : 'toolBtn'}
+          title={
+            t === 'select'
+              ? 'Select (V)'
+              : t === 'rect'
+              ? 'Rectangle (R)'
+              : t === 'circle'
+              ? 'Circle (C)'
+              : 'Text (T)'
+          }
         >
           {t}
         </button>

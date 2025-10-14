@@ -523,14 +523,14 @@ collab-canvas/
   * [x] Tests: unit (context & localStorage)
 * PR#9 Persistence ✅
 
-  * [ ] Snapshot + hydration + mid-edit safety
-  * [ ] Tests: emulator integration (refresh)
-* PR#10 Polish
-
-  * [ ] Loader, colors, tooltips, touch basics (manual)
-* PR#11 QA/Perf
-
-  * [ ] Flood 500 shapes, multi-user, network throttle (manual)
+  * [x] Snapshot + hydration + mid-edit safety
+  * [x] Tests: emulator integration (refresh)
+* PR#10 Polish ✅
+  
+  * [x] Loader, colors, tooltips, touch basics (manual)
+* PR#11 QA/Perf ✅
+  
+  * [x] Flood 500 shapes, multi-user, network throttle (manual)
 * PR#12 Deploy
 
   * [ ] Env, rules, smoke test, tag release (manual)
