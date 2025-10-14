@@ -46,11 +46,13 @@
   border-radius: 4px;
   border: 1px solid #ddd;
   background: #fafafa;
+  color: #000;
 }
 
 .toolBtn.active {
   background: #eef;
   border-color: #1976d2;
+  color: #000;
 }
 
 /* Ensure Konva container stays below overlays */
