@@ -15,7 +15,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/room/:roomId" element={<Room />} />
-          <Route path="*" element={<Navigate to="/room/default" replace />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

@@ -71,7 +71,7 @@ export function useCursorSync(
     return out
   }, [cursors, selfId])
 
-  return { cursors: visibleCursors }
+  return { cursors: visibleCursors, allCursors: cursors }
 }
 
 

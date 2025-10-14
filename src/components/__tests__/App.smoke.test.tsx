@@ -3,9 +3,9 @@ import { render, screen } from '@testing-library/react'
 import App from '../../../src/App'
 
 describe('App smoke test', () => {
-  it('renders the canvas stage', () => {
+  it('renders the login page by default', () => {
     render(<App />)
-    expect(screen.getByTestId('stage')).toBeTruthy()
+    expect(screen.getByText('Login')).toBeTruthy()
   })
 })
 
