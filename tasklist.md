@@ -519,8 +519,8 @@ collab-canvas/
   * [x] Tests: unit (timers)
 * PR#8 Auth ✅
 
-  * [ ] Anonymous auth + display name + context
-  * [ ] Tests: unit (context & localStorage)
+  * [x] Anonymous auth + display name + context
+  * [x] Tests: unit (context & localStorage)
 * PR#9 Persistence ✅
 
   * [ ] Snapshot + hydration + mid-edit safety
