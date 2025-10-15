@@ -66,9 +66,8 @@ export default function Canvas() {
     stageDraggable,
     setIsDraggingShape,
   } = useCanvasInteractions(tool)
-  const writers = useFirestoreSync(
-    roomId,
-    (s) => {
+  const upsertHandler = useCallback(
+    (s: any) => {
       // upsert: if exists update else add
       if (state.byId[s.id]) {
         const { id: _omit, ...patch } = s as any
@@ -77,11 +76,16 @@ export default function Canvas() {
         addShape(s)
       }
     },
-    (id) => {
+    [state.byId, updateShape, addShape],
+  )
+  const removeHandler = useCallback(
+    (id: string) => {
       // only remove if present
       if (state.byId[id]) removeShape(id)
     },
+    [state.byId, removeShape],
   )
+  const writers = useFirestoreSync(roomId, upsertHandler, removeHandler)
 
   const colorFromId = useMemo(() => {
     const str = selfId
@@ -97,7 +101,12 @@ export default function Canvas() {
   const cursorSync = useCursorSync(
     roomId,
     selfId,
-    () => stageRef.current?.getPointerPosition() ?? null,
+    () => {
+      const p = stageRef.current?.getPointerPosition()
+      if (!p) return null
+      const c = toCanvasPoint(p)
+      return { x: c.x, y: c.y }
+    },
     displayName ?? undefined,
     colorFromId,
   )
