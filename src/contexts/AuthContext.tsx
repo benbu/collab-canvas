@@ -32,13 +32,29 @@ export function AuthProvider(props: { children: React.ReactNode }) {
       setUser(u)
       if (u && db) {
         try {
-          const snap = await getDoc(doc(db, 'userProfiles', u.uid))
-          const username = (snap.exists() ? (snap.data() as any)?.username : null) as string | null
-          if (username) {
-            setDisplayNameState(username)
-            localStorage.setItem('displayName', username)
-          } else {
+          const isGoogle = Array.isArray(u.providerData) && u.providerData.some((p) => p.providerId === 'google.com')
+          const profileRef = doc(db, 'userProfiles', u.uid)
+          const snap = await getDoc(profileRef)
+          const existingUsername = (snap.exists() ? (snap.data() as any)?.username : null) as string | null
+          if (existingUsername) {
+            setDisplayNameState(existingUsername)
+            localStorage.setItem('displayName', existingUsername)
+            setNeedsUsernameClaim(false)
+          } else if (isGoogle) {
             setNeedsUsernameClaim(true)
+          } else {
+            const localPart = (u.email || '').split('@')[0]
+            const derived = localPart || (u.displayName ?? '') || 'user'
+            const res = await claimUsername({ uid: u.uid, username: derived })
+            if (res.ok) {
+              setDisplayNameState(derived)
+              localStorage.setItem('displayName', derived)
+              try { await updateProfile(u, { displayName: derived }) } catch {}
+            } else {
+              setDisplayNameState(derived)
+              localStorage.setItem('displayName', derived)
+            }
+            setNeedsUsernameClaim(false)
           }
         } catch {}
       }
