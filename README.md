@@ -95,6 +95,10 @@ VITE_FIREBASE_APP_ID=
 - Build command: `npm run build`, output: `dist` (configured in `vercel.json`).
 - Trigger a deploy from your repository.
 
+#### Firebase Auth providers
+- In Firebase Console > Authentication > Sign-in method, enable Email/Password and Google providers.
+- Add your Vercel production and preview domains under Authentication > Settings > Authorized domains (e.g., `your-app.vercel.app`, `*.vercel.app`).
+
 ### Firebase Firestore rules
 
 This repo includes permissive MVP rules in `firestore.rules` and `firebase.json`:
