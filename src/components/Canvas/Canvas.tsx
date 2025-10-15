@@ -55,6 +55,12 @@ export default function Canvas() {
   const [tool, setTool] = useState<Tool>('select')
   const [color, setColor] = useState<string>('#1976d2')
   const [textInput, setTextInput] = useState<string>('Text')
+  const groupDragRef = useRef<{
+    active: boolean
+    draggedId: string | null
+    start: { x: number; y: number } | null
+    origins: Record<string, { x: number; y: number }>
+  }>({ active: false, draggedId: null, start: null, origins: {} })
   const {
     selectedIds,
     setSelectedIds,
@@ -354,7 +360,43 @@ export default function Canvas() {
               x: s.x,
               y: s.y,
               draggable: isSelected,
-              onDragStart: () => setIsDraggingShape(true),
+              onDragStart: () => {
+                setIsDraggingShape(true)
+                if (tool === 'select' && isSelected && selectedIds.length > 1) {
+                  // Begin group drag: record origins for all selected shapes relative to dragged start
+                  groupDragRef.current.active = true
+                  groupDragRef.current.draggedId = id
+                  groupDragRef.current.start = { x: s.x, y: s.y }
+                  const origins: Record<string, { x: number; y: number }> = {}
+                  selectedIds.forEach((sid) => {
+                    const ss = state.byId[sid]
+                    if (ss) origins[sid] = { x: ss.x, y: ss.y }
+                  })
+                  groupDragRef.current.origins = origins
+                }
+              },
+              onDragMove: (evt: DragEndEvent) => {
+                // If group dragging, move all selected shapes by the same delta as the dragged one
+                const newX = evt.target.x?.() ?? s.x
+                const newY = evt.target.y?.() ?? s.y
+                if (groupDragRef.current.active && groupDragRef.current.draggedId === id && groupDragRef.current.start) {
+                  const dx = newX - groupDragRef.current.start.x
+                  const dy = newY - groupDragRef.current.start.y
+                  const origins = groupDragRef.current.origins
+                  selectedIds.forEach((sid) => {
+                    const origin = origins[sid]
+                    if (!origin) return
+                    const next = { x: origin.x + dx, y: origin.y + dy }
+                    if (sid === id) return // dragged shape will be finalized on dragEnd
+                    updateShape(sid, next)
+                    const so = state.byId[sid]
+                    if (so) writers.update && writers.update({ ...so, ...next })
+                  })
+                }
+                // Always broadcast dragged shape position during drag for realtime sync
+                updateShape(id, { x: newX, y: newY })
+                writers.update && writers.update({ ...s, x: newX, y: newY })
+              },
               onDragEnd: (evt: DragEndEvent) => {
                 const newX = evt.target.x?.() ?? s.x
                 const newY = evt.target.y?.() ?? s.y
@@ -362,13 +404,23 @@ export default function Canvas() {
                 updateShape(id, { x: newX, y: newY })
                 writers.update && writers.update(updated)
                 setIsDraggingShape(false)
+                // Clear group drag state
+                groupDragRef.current.active = false
+                groupDragRef.current.draggedId = null
+                groupDragRef.current.start = null
+                groupDragRef.current.origins = {}
               },
               onMouseDown: (evt: ShapeMouseEvent) => {
                 if (tool !== 'select') return
                 // A) prevent Stage mousedown from starting drag-select
                 ;(evt as any)?.evt && (((evt as any).evt as any).cancelBubble = true)
-                if (!evt?.evt?.shiftKey) setSelectedIds([id])
-                else setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
+                const isShift = !!evt?.evt?.shiftKey
+                if (isShift) {
+                  setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
+                } else {
+                  // If already selected, keep current multi-selection for group drag
+                  if (!selectedIds.includes(id)) setSelectedIds([id])
+                }
               },
             } as any
 
