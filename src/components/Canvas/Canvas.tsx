@@ -290,7 +290,9 @@ export default function Canvas() {
             setScale(next)
           }
         }}
-        onMouseDown={() => {
+        onMouseDown={(e: any) => {
+          // B) only start drag-select when clicking empty stage
+          if (e?.target && stageRef.current && e.target !== stageRef.current) return
           const stage = stageRef.current!
           const pointer = stage.getPointerPosition()
           if (!pointer) return
@@ -330,6 +332,9 @@ export default function Canvas() {
           if (!selectionRect?.active) return
           endDragSelect()
           const rect = selectionRect
+          // C) small drag threshold: ignore micro-drags
+          const dragThreshold = 3
+          if (rect.w < dragThreshold && rect.h < dragThreshold) return
           const hits = state.allIds.filter((id) => {
             const s = state.byId[id]
             return s.x >= rect.x && s.x <= rect.x + rect.w && s.y >= rect.y && s.y <= rect.y + rect.h
@@ -360,6 +365,8 @@ export default function Canvas() {
               },
               onMouseDown: (evt: ShapeMouseEvent) => {
                 if (tool !== 'select') return
+                // A) prevent Stage mousedown from starting drag-select
+                ;(evt as any)?.evt && (((evt as any).evt as any).cancelBubble = true)
                 if (!evt?.evt?.shiftKey) setSelectedIds([id])
                 else setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
               },
