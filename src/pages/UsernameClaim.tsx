@@ -7,10 +7,10 @@ export default function UsernameClaim() {
   if (!needsUsernameClaim) return null
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: '#fff', padding: 16, borderRadius: 8, minWidth: 320 }}>
+      <div style={{ background: '#fff', padding: 16, borderRadius: 8, minWidth: 320, color: '#000' }}>
         <h2>Choose a username</h2>
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <input aria-label="username" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input aria-label="username" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} style={{ color: '#000' }} />
           <button
             onClick={async () => {
               try {
