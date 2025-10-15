@@ -17,6 +17,7 @@ import { useCursorSync } from '../../hooks/useCursorSync'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePersistence } from '../../hooks/usePersistence'
 import { generateSeedRectangles, measureFpsFor } from '../../utils/devSeed'
+import UsernameClaim from '../../pages/UsernameClaim'
 
  
 type DragEndEvent = { target: { x?: () => number; y?: () => number } }
@@ -42,6 +43,11 @@ export default function Canvas() {
   const { user, displayName } = useAuth()
   const selfId = user?.uid ?? 'self'
   const { width, height } = useViewportSize()
+  useEffect(() => {
+    try {
+      localStorage.setItem('lastRoomId', roomId)
+    } catch {}
+  }, [roomId])
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const stageRef = useRef<Konva.Stage | null>(null)
@@ -65,7 +71,8 @@ export default function Canvas() {
     (s) => {
       // upsert: if exists update else add
       if (state.byId[s.id]) {
-        // shallow equality check to avoid loops is omitted for brevity
+        const { id: _omit, ...patch } = s as any
+        updateShape(s.id, patch)
       } else {
         addShape(s)
       }
@@ -199,6 +206,7 @@ export default function Canvas() {
           <div className="spinner" />
         </div>
       )}
+      <UsernameClaim />
       <PresenceList selfId={selfId} cursors={(cursorSync as any).allCursors} />
       <Toolbar
         activeTool={tool}
