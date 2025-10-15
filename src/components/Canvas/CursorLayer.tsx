@@ -1,4 +1,4 @@
-import { Layer, Line, Text } from 'react-konva'
+import { Layer, Line, Text, Group } from 'react-konva'
 import type { RemoteCursor } from '../../hooks/useCursorSync'
 
 export default function CursorLayer(props: { cursors: RemoteCursor[] }) {
@@ -6,7 +6,7 @@ export default function CursorLayer(props: { cursors: RemoteCursor[] }) {
   return (
     <Layer listening={false}>
       {cursors.map((c) => (
-        <g key={c.id}>
+        <Group key={c.id}>
           <Line
             points={[c.x, c.y, c.x - 8, c.y + 16, c.x + 8, c.y + 16]}
             closed
@@ -14,7 +14,7 @@ export default function CursorLayer(props: { cursors: RemoteCursor[] }) {
             stroke={c.color}
           />
           <Text x={c.x + 10} y={c.y + 10} text={c.name ?? c.id.slice(0, 4)} fontSize={12} fill={c.color} />
-        </g>
+        </Group>
       ))}
     </Layer>
   )

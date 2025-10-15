@@ -24,6 +24,10 @@ export function useFirestoreSync(
 ): Writer & { ready: boolean } {
   const pendingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const [ready, setReady] = useState(!isFirebaseEnabled)
+  const upsertRef = useRef(onRemoteUpsert)
+  const removeRef = useRef(onRemoteRemove)
+  useEffect(() => { upsertRef.current = onRemoteUpsert }, [onRemoteUpsert])
+  useEffect(() => { removeRef.current = onRemoteRemove }, [onRemoteRemove])
 
   const writers = useMemo<Writer>(() => ({
     add: async (shape: Shape) => {
@@ -95,7 +99,7 @@ export function useFirestoreSync(
       snap.docChanges().forEach((change) => {
         const data = change.doc.data() as Record<string, unknown>
         if (change.type === 'removed') {
-          onRemoteRemove(change.doc.id)
+          removeRef.current(change.doc.id)
         } else {
           const shape: Shape = {
             id: change.doc.id,
@@ -110,13 +114,13 @@ export function useFirestoreSync(
             fontSize: (data.fontSize as number) ?? undefined,
             rotation: (data.rotation as number) ?? undefined,
           }
-          onRemoteUpsert(shape)
+          upsertRef.current(shape)
         }
       })
       if (!ready) setReady(true)
     })
     return () => unsub()
-  }, [roomId, onRemoteUpsert, onRemoteRemove, ready])
+  }, [roomId, ready])
 
   return { ...writers, ready }
 }
