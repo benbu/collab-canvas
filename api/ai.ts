@@ -1,7 +1,8 @@
 // Minimal non-streaming API route for AI Gateway forwarding
 // Expects POST { prompt: string, tools?: any[], context?: any, model?: string, temperature?: number }
 
-import aiTools from './ai-tools'
+// Use explicit .js extension for ESM resolution on Vercel
+import aiTools from './ai-tools.js'
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
