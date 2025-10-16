@@ -22,7 +22,9 @@ export function useFirestoreSync(
   onRemoteUpsert: (s: Shape) => void,
   onRemoteRemove: (id: string) => void,
 ): Writer & { ready: boolean } {
+  // Per-shape throttle state to smooth live updates similar to cursor sync (~12.5 fps)
   const pendingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const lastWriteMs = useRef<Record<string, number>>({})
   const [ready, setReady] = useState(!isFirebaseEnabled)
   const upsertRef = useRef(onRemoteUpsert)
   const removeRef = useRef(onRemoteRemove)
@@ -55,34 +57,54 @@ export function useFirestoreSync(
     update: async (shape: Shape) => {
       if (!isFirebaseEnabled || !db) return
       const database = db!
-      // debounce per-shape to ~30ms
+      // throttle per-shape to ~80ms, with trailing
       const key = shape.id
+      const now = Date.now()
+      const last = lastWriteMs.current[key] ?? 0
+      const interval = 80
+      const remaining = interval - (now - last)
+
+      const write = async (s: Shape) => {
+        const ref = doc(database, 'rooms', roomId, 'shapes', s.id)
+        await setDoc(
+          ref,
+          {
+            type: s.type,
+            x: s.x,
+            y: s.y,
+            width: s.width ?? null,
+            height: s.height ?? null,
+            radius: s.radius ?? null,
+            fill: s.fill ?? null,
+            text: s.text ?? null,
+            fontSize: s.fontSize ?? null,
+            rotation: s.rotation ?? null,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        )
+        lastWriteMs.current[key] = Date.now()
+      }
+
+      if (remaining <= 0) {
+        // write immediately
+        await write(shape)
+        // clear any trailing timer since we just wrote
+        if (pendingTimers.current[key]) {
+          clearTimeout(pendingTimers.current[key])
+          delete pendingTimers.current[key]
+        }
+        return
+      }
+
+      // schedule trailing write with the latest shape
       if (pendingTimers.current[key]) {
         clearTimeout(pendingTimers.current[key])
       }
-      await new Promise<void>((resolve) => {
-        pendingTimers.current[key] = setTimeout(async () => {
-          const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
-          await setDoc(
-            ref,
-            {
-              type: shape.type,
-              x: shape.x,
-              y: shape.y,
-              width: shape.width ?? null,
-              height: shape.height ?? null,
-              radius: shape.radius ?? null,
-              fill: shape.fill ?? null,
-              text: shape.text ?? null,
-              fontSize: shape.fontSize ?? null,
-              rotation: shape.rotation ?? null,
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true },
-          )
-          resolve()
-        }, 30)
-      })
+      pendingTimers.current[key] = setTimeout(() => {
+        void write(shape)
+        delete pendingTimers.current[key]
+      }, remaining)
     },
     remove: async (id: string) => {
       if (!isFirebaseEnabled || !db) return
