@@ -92,6 +92,7 @@ VITE_FIREBASE_APP_ID=
 ### Vercel
 
 - In your Vercel project, add the `VITE_FIREBASE_*` env vars above.
+- Add `VERCEL_AI_GATEWAY_URL` pointing at your Vercel AI Gateway endpoint.
 - Build command: `npm run build`, output: `dist` (configured in `vercel.json`).
 - Trigger a deploy from your repository.
 
@@ -132,3 +133,10 @@ npm run dev
 ```bash
 npm test -- --run
 ```
+
+### AI Assist
+
+- Default model: `gpt-4o-mini` (temperature 0.2)
+- Tool calling: serverless function `/api/ai` forwards to Vercel AI Gateway
+- Confirmation: modal required for >50 planned steps or destructive ops
+- Limits: hard cap 100 operations per prompt (non-streaming v1)

@@ -7,6 +7,7 @@ import './Canvas.css'
 import Toolbar from '../Toolbar/Toolbar'
 import type { Tool } from '../Toolbar/Toolbar'
 import { useCanvasState } from '../../hooks/useCanvasState'
+import { useAiAssist } from '../../hooks/useAiAssist'
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions'
 import SelectionBox from './SelectionBox'
 import { useFirestoreSync } from '../../hooks/useFirestoreSync'
@@ -117,6 +118,33 @@ export default function Canvas() {
     colorFromId,
   )
   const { hydrated } = usePersistence(roomId, state, addShape)
+  const ai = useAiAssist({
+    roomId,
+    writers: writers as any,
+    getState: () => state,
+    generateId,
+    defaultFill: color,
+  })
+  const [prompt, setPrompt] = useState('')
+  const promptInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || (target as any).isContentEditable)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        promptInputRef.current?.focus()
+        return
+      }
+      if (!isTyping && e.key === '/') {
+        e.preventDefault()
+        promptInputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const handleDragMove = useMemo(
     () =>
@@ -254,6 +282,52 @@ export default function Canvas() {
           >
             Measure FPS
           </button>
+        </div>
+      )}
+      {/* AI Prompt Bar */}
+      <div style={{ position: 'fixed', bottom: 12, right: 12, display: 'flex', gap: 8, zIndex: 10, alignItems: 'center' }}>
+        <input
+          type="text"
+          placeholder="Type a prompt (/) or Cmd+K"
+          ref={promptInputRef}
+          value={prompt}
+          onChange={(e) => setPrompt(e.currentTarget.value)}
+          onKeyDown={async (e) => {
+            if (e.key === 'Enter') {
+              const val = prompt.trim()
+              if (!val) return
+              const res = await ai.postPrompt(val, { selectedIds })
+              if (res?.ok) setPrompt('')
+            }
+          }}
+          style={{ padding: '8px 10px', minWidth: 320 }}
+        />
+        <button
+          onClick={async () => {
+            const val = prompt.trim()
+            if (!val) return
+            const res = await ai.postPrompt(val, { selectedIds })
+            if (res?.ok) setPrompt('')
+          }}
+        >Go</button>
+        <div aria-live="polite" style={{ minWidth: 120 }}>
+          {ai.status === 'loading' && <span>Processing…</span>}
+          {ai.status === 'error' && <span style={{ color: '#b91c1c' }}>{ai.lastResult?.messages?.[0] ?? 'Error'}</span>}
+          {ai.status === 'success' && (
+            <span style={{ color: '#065f46' }}>Done ({ai.lastResult?.executed}/{ai.lastResult?.planned})</span>
+          )}
+        </div>
+      </div>
+      {ai.status === 'needs_confirmation' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
+          <div style={{ background: '#fff', padding: 16, borderRadius: 8, minWidth: 340 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Confirm AI Plan</div>
+            <div style={{ marginBottom: 12 }}>This prompt plans more than 50 steps. Proceed?</div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => ai.cancelPending()}>Cancel</button>
+              <button onClick={() => { void ai.confirmAndExecute() }}>Confirm</button>
+            </div>
+          </div>
         </div>
       )}
       <Stage
