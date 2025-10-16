@@ -1,7 +1,7 @@
 // Minimal non-streaming API route for AI Gateway forwarding
 // Expects POST { prompt: string, tools?: any[], context?: any, model?: string, temperature?: number }
 
-import aiTools from '../src/ai/tools'
+import aiTools from './ai-tools'
 
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
