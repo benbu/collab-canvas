@@ -97,7 +97,15 @@ export function AuthProvider(props: { children: React.ReactNode }) {
       loginWithGoogle: async () => {
         if (!isFirebaseEnabled || !auth) return
         const provider = new GoogleAuthProvider()
-        await signInWithPopup(auth, provider)
+        try {
+          await signInWithPopup(auth, provider)
+        } catch (e: any) {
+          try {
+            // eslint-disable-next-line no-console
+            console.error('[Auth] Google sign-in failed', { code: e?.code, message: e?.message })
+          } catch {}
+          throw e
+        }
       },
       logout: async () => {
         if (!isFirebaseEnabled || !auth) return
