@@ -1,16 +1,17 @@
 // Minimal non-streaming API route for AI Gateway forwarding
+// Supports both Web Request (Edge/Web Functions) and Node (req, res) Serverless runtimes
 // Expects POST { prompt: string, tools?: any[], context?: any, model?: string, temperature?: number }
 
 // Use explicit .js extension for ESM resolution on Vercel
 import aiTools from './ai-tools.js'
 
-export default async function handler(req: Request): Promise<Response> {
+async function handleWeb(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405, headers: { 'content-type': 'application/json' } })
   }
 
   try {
-    const body = await req.json().catch(() => ({})) as Record<string, unknown>
+    const body = await (req as any).json?.().catch?.(() => ({})) as Record<string, unknown> || {}
     const prompt = (body?.prompt as string) || ''
     // Security: ignore client-provided tools and always use server-defined tools
     const tools = aiTools
@@ -91,6 +92,39 @@ export default async function handler(req: Request): Promise<Response> {
     // eslint-disable-next-line no-console
     console.error('[AI API] unexpected error', { message: e?.message || String(e) })
     return new Response(JSON.stringify({ error: 'Unexpected error', message: e?.message || String(e) }), { status: 500, headers: { 'content-type': 'application/json' } })
+  }
+}
+
+export default async function handler(req: any, res?: any): Promise<any> {
+  // If this looks like a Web Request (Edge/Web Functions), handle directly
+  if (typeof req?.json === 'function' && !res) {
+    return handleWeb(req as Request)
+  }
+
+  // Node.js (req, res) runtime bridge
+  const nodeReq = req as import('node:http').IncomingMessage
+  const nodeRes = res as import('node:http').ServerResponse
+  try {
+    const chunks: Buffer[] = []
+    await new Promise<void>((resolve) => {
+      nodeReq.on('data', (c: Buffer) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)))
+      nodeReq.on('end', () => resolve())
+    })
+    const url = `https://${nodeReq.headers.host || 'localhost'}${nodeReq.url || '/api/ai'}`
+    const webReq = new Request(url, {
+      method: nodeReq.method,
+      headers: new Headers((nodeReq.headers as Record<string, string | string[] | undefined>) as any),
+      body: chunks.length ? Buffer.concat(chunks) : undefined,
+    })
+    const webRes = await handleWeb(webReq)
+    nodeRes.statusCode = webRes.status
+    webRes.headers.forEach((value, key) => nodeRes.setHeader(key, value))
+    const body = await webRes.arrayBuffer()
+    nodeRes.end(Buffer.from(body))
+  } catch (e: any) {
+    nodeRes.statusCode = 500
+    nodeRes.setHeader('content-type', 'application/json')
+    nodeRes.end(JSON.stringify({ error: 'Unexpected error', message: e?.message || String(e) }))
   }
 }
 
