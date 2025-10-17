@@ -14,6 +14,7 @@ import type { Shape } from './useCanvasState'
 type Writer = {
   add: (shape: Shape) => Promise<void>
   update: (shape: Shape) => Promise<void>
+  updateImmediate: (shape: Shape) => Promise<void>
   remove: (id: string) => Promise<void>
 }
 
@@ -83,6 +84,28 @@ export function useFirestoreSync(
       if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
       await setDoc(ref, payload, { merge: true })
       lastWriteMs.current[key] = Date.now()
+    },
+    updateImmediate: async (shape: Shape) => {
+      if (!isFirebaseEnabled || !db) return
+      const database = db!
+      const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
+      const payload: Record<string, unknown> = {
+        type: shape.type,
+        x: shape.x,
+        y: shape.y,
+        width: shape.width ?? null,
+        height: shape.height ?? null,
+        radius: shape.radius ?? null,
+        fill: shape.fill ?? null,
+        text: shape.text ?? null,
+        fontSize: shape.fontSize ?? null,
+        rotation: shape.rotation ?? null,
+        updatedAt: serverTimestamp(),
+      }
+      if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
+      await setDoc(ref, payload, { merge: true })
+      // Update throttle marker so immediate write doesn't cause an immediate trailing throttled write
+      lastWriteMs.current[shape.id] = Date.now()
     },
     remove: async (id: string) => {
       if (!isFirebaseEnabled || !db) return
