@@ -23,7 +23,6 @@ export function useFirestoreSync(
   onRemoteRemove: (id: string) => void,
 ): Writer & { ready: boolean } {
   // Per-shape throttle state to smooth live updates similar to cursor sync (~12.5 fps)
-  const pendingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const lastWriteMs = useRef<Record<string, number>>({})
   const [ready, setReady] = useState(!isFirebaseEnabled)
   const upsertRef = useRef(onRemoteUpsert)
@@ -64,46 +63,26 @@ export function useFirestoreSync(
       const interval = 80
       const remaining = interval - (now - last)
 
-      const write = async (s: Shape) => {
-        const ref = doc(database, 'rooms', roomId, 'shapes', s.id)
-        const payload: Record<string, unknown> = {
-          type: s.type,
-          x: s.x,
-          y: s.y,
-          width: s.width ?? null,
-          height: s.height ?? null,
-          radius: s.radius ?? null,
-          fill: s.fill ?? null,
-          text: s.text ?? null,
-          fontSize: s.fontSize ?? null,
-          rotation: s.rotation ?? null,
-          updatedAt: serverTimestamp(),
-        }
-        // Only include selectedBy if explicitly provided; otherwise preserve existing
-        if (s.selectedBy !== undefined) payload.selectedBy = s.selectedBy
-        await setDoc(ref, payload, { merge: true })
-        lastWriteMs.current[key] = Date.now()
-      }
+      if (remaining > 0) return
 
-      if (remaining <= 0) {
-        // write immediately
-        await write(shape)
-        // clear any trailing timer since we just wrote
-        if (pendingTimers.current[key]) {
-          clearTimeout(pendingTimers.current[key])
-          delete pendingTimers.current[key]
-        }
-        return
+      const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
+      const payload: Record<string, unknown> = {
+        type: shape.type,
+        x: shape.x,
+        y: shape.y,
+        width: shape.width ?? null,
+        height: shape.height ?? null,
+        radius: shape.radius ?? null,
+        fill: shape.fill ?? null,
+        text: shape.text ?? null,
+        fontSize: shape.fontSize ?? null,
+        rotation: shape.rotation ?? null,
+        updatedAt: serverTimestamp(),
       }
-
-      // schedule trailing write with the latest shape
-      if (pendingTimers.current[key]) {
-        clearTimeout(pendingTimers.current[key])
-      }
-      pendingTimers.current[key] = setTimeout(() => {
-        void write(shape)
-        delete pendingTimers.current[key]
-      }, remaining)
+      // Only include selectedBy if explicitly provided; otherwise preserve existing
+      if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
+      await setDoc(ref, payload, { merge: true })
+      lastWriteMs.current[key] = Date.now()
     },
     remove: async (id: string) => {
       if (!isFirebaseEnabled || !db) return
