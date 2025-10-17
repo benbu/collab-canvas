@@ -19,6 +19,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { usePersistence } from '../../hooks/usePersistence'
 import { generateSeedRectangles, measureFpsFor } from '../../utils/devSeed'
 import UsernameClaim from '../../pages/UsernameClaim'
+import ShapeEditor from './ShapeEditor'
 
  
 type DragEndEvent = { target: { x?: () => number; y?: () => number } }
@@ -62,6 +63,9 @@ export default function Canvas() {
     start: { x: number; y: number } | null
     origins: Record<string, { x: number; y: number }>
   }>({ active: false, draggedId: null, start: null, origins: {} })
+  const editingIdsRef = useRef<Set<string>>(new Set())
+  const beginEdit = useCallback((id: string) => { editingIdsRef.current.add(id) }, [])
+  const endEdit = useCallback((id: string) => { editingIdsRef.current.delete(id) }, [])
   const {
     selectedIds,
     setSelectedIds,
@@ -75,6 +79,12 @@ export default function Canvas() {
   } = useCanvasInteractions(tool)
   const upsertHandler = useCallback(
     (s: any) => {
+      // ignore remote upserts while locally editing this shape to avoid visual jumps
+      if (editingIdsRef.current.has(s.id)) {
+        // still merge remote selectedBy while editing, so remote ownership is visible
+        if (s.selectedBy !== undefined) updateShape(s.id, { selectedBy: s.selectedBy } as any)
+        return
+      }
       // upsert: if exists update else add
       if (state.byId[s.id]) {
         const { id: _omit, ...patch } = s as any
@@ -127,6 +137,14 @@ export default function Canvas() {
   })
   const [prompt, setPrompt] = useState('')
   const promptInputRef = useRef<HTMLInputElement | null>(null)
+  const prevSelectedRef = useRef<string[]>([])
+  const stateRef = useRef(state)
+  const selfIdRef = useRef(selfId)
+  const writersRef = useRef(writers)
+
+  useEffect(() => { stateRef.current = state }, [state])
+  useEffect(() => { selfIdRef.current = selfId }, [selfId])
+  useEffect(() => { writersRef.current = writers }, [writers])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -144,6 +162,53 @@ export default function Canvas() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Manage selection ownership (single-user) and cleanup
+  useEffect(() => {
+    const prev = new Set(prevSelectedRef.current)
+    const next = new Set(selectedIds)
+    const added = Array.from(next).filter((id) => !prev.has(id))
+    const removed = Array.from(prev).filter((id) => !next.has(id))
+
+    added.forEach((id) => {
+      const s = state.byId[id]
+      if (!s) return
+      const selectedBy = { userId: selfId, color: colorFromId, name: displayName }
+      updateShape(id, { selectedBy } as any)
+      writers.update && writers.update({ ...s, selectedBy } as any)
+    })
+
+    removed.forEach((id) => {
+      const s = state.byId[id]
+      if (!s) return
+      if (s.selectedBy?.userId !== selfId) return
+      updateShape(id, { selectedBy: undefined } as any)
+      writers.update && writers.update({ ...s, selectedBy: null } as any)
+    })
+
+    prevSelectedRef.current = selectedIds
+  }, [selectedIds, state.byId, updateShape, writers, selfId, colorFromId, displayName])
+
+  useEffect(() => {
+    const clearMine = () => {
+      const currentState = stateRef.current
+      const currentWriters = writersRef.current
+      const currentSelf = selfIdRef.current
+      prevSelectedRef.current.forEach((id) => {
+        const s = currentState.byId[id]
+        if (!s) return
+        if (s.selectedBy?.userId === currentSelf) {
+          // No need to update local state during unload; just clear remotely
+          currentWriters.update && currentWriters.update({ ...s, selectedBy: null } as any)
+        }
+      })
+    }
+    window.addEventListener('beforeunload', clearMine)
+    return () => {
+      window.removeEventListener('beforeunload', clearMine)
+      clearMine()
+    }
   }, [])
 
   const handleDragMove = useMemo(
@@ -433,9 +498,12 @@ export default function Canvas() {
             const common = {
               x: s.x,
               y: s.y,
-              draggable: isSelected,
+              draggable: true,
               onDragStart: () => {
                 setIsDraggingShape(true)
+                beginEdit(id)
+                // If not already selected, select the target so drag begins immediately
+                if (!isSelected) setSelectedIds([id])
                 if (tool === 'select' && isSelected && selectedIds.length > 1) {
                   // Begin group drag: record origins for all selected shapes relative to dragged start
                   groupDragRef.current.active = true
@@ -464,20 +532,22 @@ export default function Canvas() {
                     if (sid === id) return // dragged shape will be finalized on dragEnd
                     updateShape(sid, next)
                     const so = state.byId[sid]
-                    if (so) writers.update && writers.update({ ...so, ...next })
+                    const selBy = state.byId[sid]?.selectedBy
+                    if (so) writers.update && writers.update({ ...so, ...next, selectedBy: selBy } as any)
                   })
                 }
                 // Always broadcast dragged shape position during drag for realtime sync
                 updateShape(id, { x: newX, y: newY })
-                writers.update && writers.update({ ...s, x: newX, y: newY })
+                writers.update && writers.update({ ...s, x: newX, y: newY, selectedBy: state.byId[id]?.selectedBy } as any)
               },
               onDragEnd: (evt: DragEndEvent) => {
                 const newX = evt.target.x?.() ?? s.x
                 const newY = evt.target.y?.() ?? s.y
                 const updated = { ...s, x: newX, y: newY }
                 updateShape(id, { x: newX, y: newY })
-                writers.update && writers.update(updated)
+                writers.update && writers.update({ ...updated, selectedBy: state.byId[id]?.selectedBy } as any)
                 setIsDraggingShape(false)
+                endEdit(id)
                 // Clear group drag state
                 groupDragRef.current.active = false
                 groupDragRef.current.draggedId = null
@@ -499,12 +569,70 @@ export default function Canvas() {
             } as any
 
             if (s.type === 'rect') {
+              const w = s.width ?? 0
+              const h = s.height ?? 0
+              const cx = s.x + w / 2
+              const cy = s.y + h / 2
               return (
                 <Fragment key={id}>
-                  <Rect {...common} width={s.width ?? 0} height={s.height ?? 0} fill={s.fill} />
-                  {isSelected && (
-                    <Rect data-testid="rect-outline" x={s.x - 2} y={s.y - 2} width={(s.width ?? 0) + 4} height={(s.height ?? 0) + 4} stroke="#1976d2" listening={false} />
-                  )}
+                  <Rect
+                    {...common}
+                    x={cx}
+                    y={cy}
+                    offsetX={w / 2}
+                    offsetY={h / 2}
+                    width={w}
+                    height={h}
+                    fill={s.fill}
+                    rotation={s.rotation ?? 0}
+                    onDragMove={(evt: DragEndEvent) => {
+                      const cX = evt.target.x?.() ?? cx
+                      const cY = evt.target.y?.() ?? cy
+                      const nextX = cX - w / 2
+                      const nextY = cY - h / 2
+                      updateShape(id, { x: nextX, y: nextY })
+                      writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                    }}
+                    onDragEnd={(evt: DragEndEvent) => {
+                      const cX = evt.target.x?.() ?? cx
+                      const cY = evt.target.y?.() ?? cy
+                      const nextX = cX - w / 2
+                      const nextY = cY - h / 2
+                      updateShape(id, { x: nextX, y: nextY })
+                      writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                      setIsDraggingShape(false)
+                      endEdit(id)
+                      groupDragRef.current.active = false
+                      groupDragRef.current.draggedId = null
+                      groupDragRef.current.start = null
+                      groupDragRef.current.origins = {}
+                    }}
+                  />
+                <ShapeEditor
+                  shape={s as any}
+                  isSelected={isSelected}
+                  onChange={(next) => {
+                  updateShape(id, next as any)
+                  const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
+                  writers.update && writers.update(latest as any)
+                  }}
+                  onCommit={() => {
+                    const latest = state.byId[id]
+                    if (latest) writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                  }}
+                    onBeginEdit={() => beginEdit(id)}
+                    onEndEdit={() => endEdit(id)}
+                />
+                {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
+                  <ShapeEditor
+                    shape={s as any}
+                    isSelected
+                    selectionColor={s.selectedBy.color}
+                    interactive={false}
+                    onChange={() => {}}
+                  />
+                )}
+                  
                 </Fragment>
               )
             }
@@ -512,18 +640,101 @@ export default function Canvas() {
               return (
                 <Fragment key={id}>
                   <Circle {...common} radius={s.radius ?? 0} fill={s.fill} />
-                  {isSelected && (
-                    <Circle data-testid="circle-outline" x={s.x} y={s.y} radius={(s.radius ?? 0) + 4} stroke="#1976d2" listening={false} />
-                  )}
+                <ShapeEditor
+                  shape={s as any}
+                  isSelected={isSelected}
+                  onChange={(next) => {
+                  updateShape(id, next as any)
+                  const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
+                  writers.update && writers.update(latest as any)
+                  }}
+                  onCommit={() => {
+                    const latest = state.byId[id]
+                    if (latest) writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                  }}
+                    onBeginEdit={() => beginEdit(id)}
+                    onEndEdit={() => endEdit(id)}
+                />
+                {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
+                  <ShapeEditor
+                    shape={s as any}
+                    isSelected
+                    selectionColor={s.selectedBy.color}
+                    interactive={false}
+                    onChange={() => {}}
+                  />
+                )}
+                  
                 </Fragment>
               )
             }
+            // text
+            const fs = s.fontSize ?? 18
+            const approxCharWidth = Math.max(5, Math.round(fs * 0.6))
+            const tw = Math.max(10, (s.text?.length ?? 1) * approxCharWidth)
+            const th = fs
+            const tcx = s.x + tw / 2
+            const tcy = (s.y - th) + th / 2
             return (
               <Fragment key={id}>
-                <Text {...common} text={s.text ?? ''} fontSize={s.fontSize ?? 18} fill={s.fill} />
-                {isSelected && (
-                  <Rect data-testid="text-outline" x={s.x - 2} y={s.y - 16} width={(s.text?.length ?? 1) * 9} height={s.fontSize ?? 18} stroke="#1976d2" listening={false} />
-                )}
+              <Text
+                {...common}
+                x={tcx}
+                y={tcy}
+                offsetX={tw / 2}
+                offsetY={th / 2}
+                text={s.text ?? ''}
+                fontSize={fs}
+                fill={s.fill}
+                rotation={s.rotation ?? 0}
+                onDragMove={(evt: DragEndEvent) => {
+                  const cX = evt.target.x?.() ?? tcx
+                  const cY = evt.target.y?.() ?? tcy
+                  const nextX = cX - tw / 2
+                  const nextY = cY + th / 2
+                  updateShape(id, { x: nextX, y: nextY })
+                  writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                }}
+                onDragEnd={(evt: DragEndEvent) => {
+                  const cX = evt.target.x?.() ?? tcx
+                  const cY = evt.target.y?.() ?? tcy
+                  const nextX = cX - tw / 2
+                  const nextY = cY + th / 2
+                  updateShape(id, { x: nextX, y: nextY })
+                  writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                  setIsDraggingShape(false)
+                  endEdit(id)
+                  groupDragRef.current.active = false
+                  groupDragRef.current.draggedId = null
+                  groupDragRef.current.start = null
+                  groupDragRef.current.origins = {}
+                }}
+              />
+              <ShapeEditor
+                shape={s as any}
+                isSelected={isSelected}
+                onChange={(next) => {
+                  updateShape(id, next as any)
+                  const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
+                  writers.update && writers.update(latest as any)
+                }}
+                onCommit={() => {
+                  const latest = state.byId[id]
+                  if (latest) writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                }}
+                onBeginEdit={() => beginEdit(id)}
+                onEndEdit={() => endEdit(id)}
+              />
+              {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
+                <ShapeEditor
+                  shape={s as any}
+                  isSelected
+                  selectionColor={s.selectedBy.color}
+                  interactive={false}
+                  onChange={() => {}}
+                />
+              )}
+                
               </Fragment>
             )
           })}
