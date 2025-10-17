@@ -489,7 +489,10 @@ export default function Canvas() {
           const rect = selectionRect
           // C) small drag threshold: ignore micro-drags
           const dragThreshold = 3
-          if (rect.w < dragThreshold && rect.h < dragThreshold) return
+          if (rect.w < dragThreshold && rect.h < dragThreshold) {
+            clearSelection()
+            return
+          }
           const hits = state.allIds.filter((id) => {
             const s = state.byId[id]
             if (!s) return false
@@ -575,10 +578,14 @@ export default function Canvas() {
               },
               onMouseDown: (evt: ShapeMouseEvent) => {
                 if (tool !== 'select') return
+                const isShift = !!evt?.evt?.shiftKey
+                if (lockedByOther) {
+                  // Clicking a locked shape should clear selection unless user is attempting shift add/remove
+                  if (!isShift) clearSelection()
+                  return
+                }
                 // A) prevent Stage mousedown from starting drag-select
                 ;(evt as any)?.evt && (((evt as any).evt as any).cancelBubble = true)
-                if (lockedByOther) return
-                const isShift = !!evt?.evt?.shiftKey
                 if (isShift) {
                   setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
                 } else {
