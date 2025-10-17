@@ -490,7 +490,7 @@ export default function Canvas() {
         <Layer listening={false}>{gridLines}</Layer>
         <Layer>
           {selectionRect?.active && (
-            <SelectionBox x={selectionRect.x} y={selectionRect.y} w={selectionRect.w} h={selectionRect.h} />
+            <SelectionBox x={selectionRect.x} y={selectionRect.y} w={selectionRect.w} h={selectionRect.h} color={colorFromId} />
           )}
           {state.allIds.map((id) => {
             const s = state.byId[id]
@@ -611,6 +611,7 @@ export default function Canvas() {
                 <ShapeEditor
                   shape={s as any}
                   isSelected={isSelected}
+                  selectionColor={colorFromId}
                   onChange={(next) => {
                   updateShape(id, next as any)
                   const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
@@ -643,6 +644,7 @@ export default function Canvas() {
                 <ShapeEditor
                   shape={s as any}
                   isSelected={isSelected}
+                  selectionColor={colorFromId}
                   onChange={(next) => {
                   updateShape(id, next as any)
                   const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
@@ -713,6 +715,7 @@ export default function Canvas() {
               <ShapeEditor
                 shape={s as any}
                 isSelected={isSelected}
+                selectionColor={colorFromId}
                 onChange={(next) => {
                   updateShape(id, next as any)
                   const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
