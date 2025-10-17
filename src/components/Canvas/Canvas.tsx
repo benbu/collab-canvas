@@ -190,6 +190,16 @@ export default function Canvas() {
     prevSelectedRef.current = selectedIds
   }, [selectedIds, state.byId, updateShape, writers, selfId, colorFromId, displayName])
 
+  // If any locally selected shape becomes locked by another user, drop it from local selection
+  useEffect(() => {
+    if (selectedIds.length === 0) return
+    const filtered = selectedIds.filter((id) => {
+      const s = state.byId[id]
+      return !(s?.selectedBy?.userId && s.selectedBy.userId !== selfId)
+    })
+    if (filtered.length !== selectedIds.length) setSelectedIds(filtered)
+  }, [selectedIds, state.byId, selfId, setSelectedIds])
+
   useEffect(() => {
     const clearMine = () => {
       const currentState = stateRef.current
@@ -482,6 +492,9 @@ export default function Canvas() {
           if (rect.w < dragThreshold && rect.h < dragThreshold) return
           const hits = state.allIds.filter((id) => {
             const s = state.byId[id]
+            if (!s) return false
+            const lockedByOther = !!(s.selectedBy?.userId && s.selectedBy.userId !== selfId)
+            if (lockedByOther) return false
             return s.x >= rect.x && s.x <= rect.x + rect.w && s.y >= rect.y && s.y <= rect.y + rect.h
           })
           setSelectedIds(hits)
@@ -495,11 +508,13 @@ export default function Canvas() {
           {state.allIds.map((id) => {
             const s = state.byId[id]
             const isSelected = selectedIds.includes(id)
+            const lockedByOther = !!(s.selectedBy?.userId && s.selectedBy.userId !== selfId)
             const common = {
               x: s.x,
               y: s.y,
-              draggable: true,
+              draggable: !lockedByOther,
               onDragStart: () => {
+                if (lockedByOther) return
                 setIsDraggingShape(true)
                 beginEdit(id)
                 // If not already selected, select the target so drag begins immediately
@@ -562,6 +577,7 @@ export default function Canvas() {
                 if (tool !== 'select') return
                 // A) prevent Stage mousedown from starting drag-select
                 ;(evt as any)?.evt && (((evt as any).evt as any).cancelBubble = true)
+                if (lockedByOther) return
                 const isShift = !!evt?.evt?.shiftKey
                 if (isShift) {
                   setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
