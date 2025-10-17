@@ -15,6 +15,7 @@ import { generateId } from '../../utils/id'
 import CursorLayer from './CursorLayer'
 import PresenceList from '../Presence/PresenceList'
 import { useCursorSync } from '../../hooks/useCursorSync'
+import { usePresence } from '../../hooks/usePresence'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePersistence } from '../../hooks/usePersistence'
 import { generateSeedRectangles, measureFpsFor } from '../../utils/devSeed'
@@ -127,6 +128,7 @@ export default function Canvas() {
     displayName ?? undefined,
     colorFromId,
   )
+  const { presenceById } = usePresence(roomId, selfId, displayName ?? undefined, colorFromId)
   const { hydrated } = usePersistence(roomId, state, addShape)
   const ai = useAiAssist({
     roomId,
@@ -325,7 +327,7 @@ export default function Canvas() {
         </div>
       )}
       <UsernameClaim />
-      <PresenceList selfId={selfId} cursors={(cursorSync as any).allCursors} />
+      <PresenceList selfId={selfId} presence={presenceById} />
       <Toolbar
         activeTool={tool}
         onToolChange={(t) => {
