@@ -15,6 +15,7 @@ export type Shape = {
   text?: string
   fontSize?: number
   rotation?: number
+  selectedBy?: { userId: string; color: string; name?: string }
 }
 
 type State = { byId: Record<string, Shape>; allIds: string[] }

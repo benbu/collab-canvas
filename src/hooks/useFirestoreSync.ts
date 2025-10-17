@@ -36,9 +36,8 @@ export function useFirestoreSync(
       if (!isFirebaseEnabled || !db) return
       const database = db!
       const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
-      await setDoc(
-        ref,
-        {
+      {
+        const payload: Record<string, unknown> = {
           type: shape.type,
           x: shape.x,
           y: shape.y,
@@ -50,9 +49,10 @@ export function useFirestoreSync(
           fontSize: shape.fontSize ?? null,
           rotation: shape.rotation ?? null,
           updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      )
+        }
+        if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
+        await setDoc(ref, payload, { merge: true })
+      }
     },
     update: async (shape: Shape) => {
       if (!isFirebaseEnabled || !db) return
@@ -66,23 +66,22 @@ export function useFirestoreSync(
 
       const write = async (s: Shape) => {
         const ref = doc(database, 'rooms', roomId, 'shapes', s.id)
-        await setDoc(
-          ref,
-          {
-            type: s.type,
-            x: s.x,
-            y: s.y,
-            width: s.width ?? null,
-            height: s.height ?? null,
-            radius: s.radius ?? null,
-            fill: s.fill ?? null,
-            text: s.text ?? null,
-            fontSize: s.fontSize ?? null,
-            rotation: s.rotation ?? null,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        )
+        const payload: Record<string, unknown> = {
+          type: s.type,
+          x: s.x,
+          y: s.y,
+          width: s.width ?? null,
+          height: s.height ?? null,
+          radius: s.radius ?? null,
+          fill: s.fill ?? null,
+          text: s.text ?? null,
+          fontSize: s.fontSize ?? null,
+          rotation: s.rotation ?? null,
+          updatedAt: serverTimestamp(),
+        }
+        // Only include selectedBy if explicitly provided; otherwise preserve existing
+        if (s.selectedBy !== undefined) payload.selectedBy = s.selectedBy
+        await setDoc(ref, payload, { merge: true })
         lastWriteMs.current[key] = Date.now()
       }
 
@@ -135,6 +134,7 @@ export function useFirestoreSync(
             text: (data.text as string) ?? undefined,
             fontSize: (data.fontSize as number) ?? undefined,
             rotation: (data.rotation as number) ?? undefined,
+            selectedBy: (data.selectedBy as any) ?? undefined,
           }
           upsertRef.current(shape)
         }
