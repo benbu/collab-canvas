@@ -545,7 +545,11 @@ export default function Canvas() {
                 const newY = evt.target.y?.() ?? s.y
                 const updated = { ...s, x: newX, y: newY }
                 updateShape(id, { x: newX, y: newY })
-                writers.update && writers.update({ ...updated, selectedBy: state.byId[id]?.selectedBy } as any)
+                if ((writers as any).updateImmediate) {
+                  ;(writers as any).updateImmediate({ ...updated, selectedBy: state.byId[id]?.selectedBy } as any)
+                } else {
+                  writers.update && writers.update({ ...updated, selectedBy: state.byId[id]?.selectedBy } as any)
+                }
                 setIsDraggingShape(false)
                 endEdit(id)
                 // Clear group drag state
@@ -599,7 +603,11 @@ export default function Canvas() {
                       const nextX = cX - w / 2
                       const nextY = cY - h / 2
                       updateShape(id, { x: nextX, y: nextY })
-                      writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                      if ((writers as any).updateImmediate) {
+                        ;(writers as any).updateImmediate({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                      } else {
+                        writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                      }
                       setIsDraggingShape(false)
                       endEdit(id)
                       groupDragRef.current.active = false
@@ -703,7 +711,11 @@ export default function Canvas() {
                   const nextX = cX - tw / 2
                   const nextY = cY + th / 2
                   updateShape(id, { x: nextX, y: nextY })
-                  writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                  if ((writers as any).updateImmediate) {
+                    ;(writers as any).updateImmediate({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                  } else {
+                    writers.update && writers.update({ ...s, x: nextX, y: nextY, selectedBy: state.byId[id]?.selectedBy } as any)
+                  }
                   setIsDraggingShape(false)
                   endEdit(id)
                   groupDragRef.current.active = false
