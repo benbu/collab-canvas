@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Stage, Layer, Line, Rect, Circle, Text } from 'react-konva'
 import type Konva from 'konva'
 import { throttle } from '../../utils/throttle'
+import { autoLayout } from '../../utils/autoLayout'
 import './Canvas.css'
 import Toolbar from '../Toolbar/Toolbar'
 import ConfirmModal from './ConfirmModal'
@@ -56,7 +57,7 @@ export default function Canvas() {
   const [scale, setScale] = useState(1)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const stageRef = useRef<Konva.Stage | null>(null)
-  const { state, addShape, updateShape, removeShape } = useCanvasState()
+  const { state, addShape, updateShape, removeShape, moveShapeToFront, moveShapeToBack, moveShapeForward, moveShapeBackward } = useCanvasState()
   const [tool, setTool] = useState<Tool>('select')
   const [color, setColor] = useState<string>('#1976d2')
   const [textInput, setTextInput] = useState<string>('Text')
@@ -352,6 +353,183 @@ export default function Canvas() {
     return () => container.removeEventListener('wheel', wheelListener)
   }, [handleWheel])
 
+  const handleAutoLayout = useCallback(() => {
+    // Only work with 2+ selected shapes
+    if (selectedIds.length < 2) return
+    
+    // Get selected shapes, excluding those locked by others
+    const selectedShapes = selectedIds
+      .map(id => state.byId[id])
+      .filter(shape => {
+        if (!shape) return false
+        const lockedByOther = !!(shape.selectedBy?.userId && shape.selectedBy.userId !== selfId)
+        return !lockedByOther
+      })
+    
+    if (selectedShapes.length < 2) return
+    
+    // Calculate new positions
+    const layoutResults = autoLayout(selectedShapes)
+    
+    // Apply new positions
+    layoutResults.forEach(result => {
+      const shape = state.byId[result.id]
+      if (!shape) return
+      
+      updateShape(result.id, { x: result.x, y: result.y })
+      writers.update && writers.update({ 
+        ...shape, 
+        x: result.x, 
+        y: result.y, 
+        selectedBy: state.byId[result.id]?.selectedBy 
+      } as any)
+    })
+  }, [selectedIds, state.byId, selfId, updateShape, writers])
+
+  const handleBringToFront = useCallback(() => {
+    if (selectedIds.length === 0) return
+    
+    // Filter out shapes locked by others
+    const validIds = selectedIds.filter(id => {
+      const shape = state.byId[id]
+      if (!shape) return false
+      const lockedByOther = !!(shape.selectedBy?.userId && shape.selectedBy.userId !== selfId)
+      return !lockedByOther
+    })
+    
+    if (validIds.length === 0) return
+    
+    // Update local state
+    moveShapeToFront(validIds)
+    
+    // Calculate new zIndex values for syncing
+    const allShapes = state.allIds.map(id => state.byId[id]).filter(Boolean)
+    const maxZ = Math.max(...allShapes.map(s => s.zIndex ?? 0), 0)
+    const selectedShapes = validIds.map(id => state.byId[id]).filter(Boolean)
+    selectedShapes.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+    
+    // Sync to Firestore with new zIndex values
+    selectedShapes.forEach((shape, index) => {
+      if (writers.updateImmediate) {
+        writers.updateImmediate({ ...shape, zIndex: maxZ + 1 + index, selectedBy: shape.selectedBy } as any)
+      }
+    })
+  }, [selectedIds, state.byId, state.allIds, selfId, moveShapeToFront, writers])
+
+  const handleBringForward = useCallback(() => {
+    if (selectedIds.length === 0) return
+    
+    // Filter out shapes locked by others
+    const validIds = selectedIds.filter(id => {
+      const shape = state.byId[id]
+      if (!shape) return false
+      const lockedByOther = !!(shape.selectedBy?.userId && shape.selectedBy.userId !== selfId)
+      return !lockedByOther
+    })
+    
+    if (validIds.length === 0) return
+    
+    // Update local state
+    moveShapeForward(validIds)
+    
+    // Calculate new zIndex values for syncing
+    const allShapes = state.allIds.map(id => state.byId[id]).filter(Boolean)
+    const zIndexValues = Array.from(new Set(allShapes.map(s => s.zIndex ?? 0))).sort((a, b) => a - b)
+    
+    // Sync to Firestore with new zIndex values
+    validIds.forEach(id => {
+      const shape = state.byId[id]
+      if (!shape) return
+      
+      const currentZ = shape.zIndex ?? 0
+      const currentIndex = zIndexValues.indexOf(currentZ)
+      let newZ = currentZ
+      
+      if (currentIndex < zIndexValues.length - 1) {
+        const nextZ = zIndexValues[currentIndex + 1]
+        newZ = nextZ + 0.5
+      } else {
+        newZ = currentZ + 1
+      }
+      
+      if (writers.updateImmediate) {
+        writers.updateImmediate({ ...shape, zIndex: newZ, selectedBy: shape.selectedBy } as any)
+      }
+    })
+  }, [selectedIds, state.byId, state.allIds, selfId, moveShapeForward, writers])
+
+  const handleSendBackward = useCallback(() => {
+    if (selectedIds.length === 0) return
+    
+    // Filter out shapes locked by others
+    const validIds = selectedIds.filter(id => {
+      const shape = state.byId[id]
+      if (!shape) return false
+      const lockedByOther = !!(shape.selectedBy?.userId && shape.selectedBy.userId !== selfId)
+      return !lockedByOther
+    })
+    
+    if (validIds.length === 0) return
+    
+    // Update local state
+    moveShapeBackward(validIds)
+    
+    // Calculate new zIndex values for syncing
+    const allShapes = state.allIds.map(id => state.byId[id]).filter(Boolean)
+    const zIndexValues = Array.from(new Set(allShapes.map(s => s.zIndex ?? 0))).sort((a, b) => a - b)
+    
+    // Sync to Firestore with new zIndex values
+    validIds.forEach(id => {
+      const shape = state.byId[id]
+      if (!shape) return
+      
+      const currentZ = shape.zIndex ?? 0
+      const currentIndex = zIndexValues.indexOf(currentZ)
+      let newZ = currentZ
+      
+      if (currentIndex > 0) {
+        const prevZ = zIndexValues[currentIndex - 1]
+        newZ = prevZ - 0.5
+      } else {
+        newZ = currentZ - 1
+      }
+      
+      if (writers.updateImmediate) {
+        writers.updateImmediate({ ...shape, zIndex: newZ, selectedBy: shape.selectedBy } as any)
+      }
+    })
+  }, [selectedIds, state.byId, state.allIds, selfId, moveShapeBackward, writers])
+
+  const handleSendToBack = useCallback(() => {
+    if (selectedIds.length === 0) return
+    
+    // Filter out shapes locked by others
+    const validIds = selectedIds.filter(id => {
+      const shape = state.byId[id]
+      if (!shape) return false
+      const lockedByOther = !!(shape.selectedBy?.userId && shape.selectedBy.userId !== selfId)
+      return !lockedByOther
+    })
+    
+    if (validIds.length === 0) return
+    
+    // Update local state
+    moveShapeToBack(validIds)
+    
+    // Calculate new zIndex values for syncing
+    const allShapes = state.allIds.map(id => state.byId[id]).filter(Boolean)
+    const minZ = Math.min(...allShapes.map(s => s.zIndex ?? 0), 0)
+    const selectedShapes = validIds.map(id => state.byId[id]).filter(Boolean)
+    selectedShapes.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
+    
+    // Sync to Firestore with new zIndex values
+    selectedShapes.forEach((shape, index) => {
+      if (writers.updateImmediate) {
+        writers.updateImmediate({ ...shape, zIndex: minZ - selectedShapes.length + index, selectedBy: shape.selectedBy } as any)
+      }
+    })
+  }, [selectedIds, state.byId, state.allIds, selfId, moveShapeToBack, writers])
+
   useEffect(() => {
     const keyHandler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
@@ -367,6 +545,7 @@ export default function Canvas() {
         setSelectedIds([])
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault()
         selectedIds.forEach((id) => {
           const s = state.byId[id]
           if (!s) return
@@ -382,10 +561,35 @@ export default function Canvas() {
           writers.add && writers.add({ ...duplicate })
         })
       }
+      if (e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        handleAutoLayout()
+      }
+      // zIndex keyboard shortcuts
+      if ((e.ctrlKey || e.metaKey) && e.key === ']') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          // Bring Forward: Ctrl/Cmd + Shift + ]
+          handleBringForward()
+        } else {
+          // Bring to Front: Ctrl/Cmd + ]
+          handleBringToFront()
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '[') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          // Send Backward: Ctrl/Cmd + Shift + [
+          handleSendBackward()
+        } else {
+          // Send to Back: Ctrl/Cmd + [
+          handleSendToBack()
+        }
+      }
     }
     window.addEventListener('keydown', keyHandler)
     return () => window.removeEventListener('keydown', keyHandler)
-  }, [selectedIds, state.byId, addShape, removeShape, setSelectedIds])
+  }, [selectedIds, state.byId, addShape, removeShape, setSelectedIds, handleAutoLayout, handleBringToFront, handleBringForward, handleSendBackward, handleSendToBack])
 
   useEffect(() => {
     const arrowKeyHandler = (e: KeyboardEvent) => {
@@ -505,6 +709,11 @@ export default function Canvas() {
           setShowClearModal(true)
         }}
         onExportImage={handleExportImage}
+        onAutoLayout={handleAutoLayout}
+        onBringToFront={handleBringToFront}
+        onBringForward={handleBringForward}
+        onSendBackward={handleSendBackward}
+        onSendToBack={handleSendToBack}
       />
       {showClearModal && (
         <ConfirmModal
@@ -690,17 +899,20 @@ export default function Canvas() {
 
           if (tool === 'rect') {
             const id = generateId()
-            const shape = { id, type: 'rect' as const, x: canvasPoint.x, y: canvasPoint.y, width: 200, height: 120, fill: color }
+            const maxZ = Math.max(...state.allIds.map(id => state.byId[id]?.zIndex ?? 0), 0)
+            const shape = { id, type: 'rect' as const, x: canvasPoint.x, y: canvasPoint.y, width: 200, height: 120, fill: color, zIndex: maxZ + 1 }
             addShape(shape)
             writers.add && writers.add({ ...shape })
           } else if (tool === 'circle') {
             const id = generateId()
-            const shape = { id, type: 'circle' as const, x: canvasPoint.x, y: canvasPoint.y, radius: 60, fill: color }
+            const maxZ = Math.max(...state.allIds.map(id => state.byId[id]?.zIndex ?? 0), 0)
+            const shape = { id, type: 'circle' as const, x: canvasPoint.x, y: canvasPoint.y, radius: 60, fill: color, zIndex: maxZ + 1 }
             addShape(shape)
             writers.add && writers.add({ ...shape })
           } else if (tool === 'text') {
             const id = generateId()
-            const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color, fontFamily }
+            const maxZ = Math.max(...state.allIds.map(id => state.byId[id]?.zIndex ?? 0), 0)
+            const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color, fontFamily, zIndex: maxZ + 1 }
             addShape(shape)
             writers.add && writers.add({ ...shape })
           }
@@ -742,7 +954,14 @@ export default function Canvas() {
           {selectionRect?.active && (
             <SelectionBox x={selectionRect.x} y={selectionRect.y} w={selectionRect.w} h={selectionRect.h} color={colorFromId} />
           )}
-          {state.allIds.map((id) => {
+          {state.allIds
+            .slice()
+            .sort((a, b) => {
+              const zA = state.byId[a]?.zIndex ?? 0
+              const zB = state.byId[b]?.zIndex ?? 0
+              return zA - zB
+            })
+            .map((id) => {
             const s = state.byId[id]
             const isSelected = selectedIds.includes(id)
             const lockedByOther = !!(s.selectedBy?.userId && s.selectedBy.userId !== selfId)

@@ -1,4 +1,4 @@
-import { Hand, MousePointer, Square, Circle as CircleIcon, Type as TypeIcon, Trash2, Download } from 'lucide-react'
+import { Hand, MousePointer, Square, Circle as CircleIcon, Type as TypeIcon, Trash2, Download, LayoutGrid, ArrowUpToLine, ArrowDownToLine, ArrowUp, ArrowDown } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 
 export type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text'
@@ -15,8 +15,13 @@ export default function Toolbar(props: {
   onTextChange: (t: string) => void
   onRequestClearAll: () => void
   onExportImage: () => void
+  onAutoLayout: () => void
+  onBringToFront: () => void
+  onBringForward: () => void
+  onSendBackward: () => void
+  onSendToBack: () => void
 }) {
-  const { activeTool, onToolChange, color, onColorChange, text, onTextChange, onRequestClearAll, onExportImage } = props
+  const { activeTool, onToolChange, color, onColorChange, text, onTextChange, onRequestClearAll, onExportImage, onAutoLayout, onBringToFront, onBringForward, onSendBackward, onSendToBack } = props
   const [recentColors, setRecentColors] = useState<string[]>([])
   const [showRecentColors, setShowRecentColors] = useState(false)
   const colorInputRef = useRef<HTMLInputElement>(null)
@@ -133,6 +138,56 @@ export default function Toolbar(props: {
           </button>
         )
       })}
+      <button
+        onClick={onAutoLayout}
+        className="toolBtn"
+        title="Auto Layout (L)"
+        data-title="Auto Layout (L)"
+        aria-label="Auto Layout"
+      >
+        <LayoutGrid size={18} aria-hidden />
+        <span className="srOnly">Auto Layout</span>
+      </button>
+      <button
+        onClick={onBringToFront}
+        className="toolBtn"
+        title="Bring to Front (Ctrl/Cmd + ])"
+        data-title="Bring to Front (Ctrl/Cmd + ])"
+        aria-label="Bring to Front"
+      >
+        <ArrowUpToLine size={18} aria-hidden />
+        <span className="srOnly">Bring to Front</span>
+      </button>
+      <button
+        onClick={onBringForward}
+        className="toolBtn"
+        title="Bring Forward (Ctrl/Cmd + Shift + ])"
+        data-title="Bring Forward (Ctrl/Cmd + Shift + ])"
+        aria-label="Bring Forward"
+      >
+        <ArrowUp size={18} aria-hidden />
+        <span className="srOnly">Bring Forward</span>
+      </button>
+      <button
+        onClick={onSendBackward}
+        className="toolBtn"
+        title="Send Backward (Ctrl/Cmd + Shift + [)"
+        data-title="Send Backward (Ctrl/Cmd + Shift + [)"
+        aria-label="Send Backward"
+      >
+        <ArrowDown size={18} aria-hidden />
+        <span className="srOnly">Send Backward</span>
+      </button>
+      <button
+        onClick={onSendToBack}
+        className="toolBtn"
+        title="Send to Back (Ctrl/Cmd + [)"
+        data-title="Send to Back (Ctrl/Cmd + [)"
+        aria-label="Send to Back"
+      >
+        <ArrowDownToLine size={18} aria-hidden />
+        <span className="srOnly">Send to Back</span>
+      </button>
       <button
         onClick={onRequestClearAll}
         className="toolBtn"
