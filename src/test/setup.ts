@@ -60,7 +60,9 @@ vi.mock('react-konva', () => {
       onMouseUp: props.onMouseUp,
     })
   const Transformer: React.FC = () => React.createElement('div', { 'data-testid': 'transformer' })
-  return { Stage, Layer, Line, Rect, Circle, Text, Transformer }
+  const Group: React.FC<Record<string, unknown>> = (props) =>
+    React.createElement('div', { 'data-testid': 'group' }, props.children as any)
+  return { Stage, Layer, Line, Rect, Circle, Text, Transformer, Group }
 })
 
 
