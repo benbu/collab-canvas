@@ -11,6 +11,8 @@ type Props = {
   onEndEdit?: () => void
   selectionColor?: string
   interactive?: boolean
+  scale?: number
+  position?: { x: number; y: number }
 }
 
 type Bounds = { x: number; y: number; w: number; h: number }
@@ -38,7 +40,7 @@ function getBounds(shape: Shape): Bounds {
   return { x: shape.x, y: shape.y - h, w, h }
 }
 
-export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onBeginEdit, onEndEdit, selectionColor, interactive = true }: Props) {
+export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onBeginEdit, onEndEdit, selectionColor, interactive = true, scale = 1, position = { x: 0, y: 0 } }: Props) {
   const bounds = useMemo(() => getBounds(shape), [shape])
   const startRef = useRef<StartState | null>(null)
   const groupRef = useRef<any>(null)
@@ -69,6 +71,12 @@ export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onB
     const stage = grp?.getStage()
     const pointer = stage?.getPointerPosition()
     if (!pointer || !grp) return
+
+    // Convert pointer from stage space to canvas space
+    const canvasPointer = {
+      x: (pointer.x - position.x) / scale,
+      y: (pointer.y - position.y) / scale
+    }
 
     // Lazily capture start state
     if (!startRef.current) {
@@ -103,8 +111,8 @@ export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onB
     const rad = (rot * Math.PI) / 180
     
     // Vector from opposite corner to pointer in world space
-    const dx = pointer.x - opp.x
-    const dy = pointer.y - opp.y
+    const dx = canvasPointer.x - opp.x
+    const dy = canvasPointer.y - opp.y
     
     // Rotate back to shape's local space to get dimensions
     const localDx = dx * Math.cos(-rad) - dy * Math.sin(-rad)
@@ -114,8 +122,8 @@ export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onB
     const localH = Math.max(1, Math.abs(localDy))
     
     // New center is midpoint between opposite corner and pointer
-    const newCenterX = (opp.x + pointer.x) / 2
-    const newCenterY = (opp.y + pointer.y) / 2
+    const newCenterX = (opp.x + canvasPointer.x) / 2
+    const newCenterY = (opp.y + canvasPointer.y) / 2
 
     // Update shape based on type
     if (shape.type === 'rect') {

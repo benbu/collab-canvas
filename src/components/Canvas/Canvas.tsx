@@ -1099,6 +1099,8 @@ export default function Canvas() {
                   shape={s as any}
                   isSelected={isSelected}
                   selectionColor={colorFromId}
+                  scale={scale}
+                  position={position}
                   onChange={(next) => {
                   updateShape(id, next as any)
                   const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
@@ -1123,6 +1125,8 @@ export default function Canvas() {
                     isSelected
                     selectionColor={s.selectedBy.color}
                     interactive={false}
+                    scale={scale}
+                    position={position}
                     onChange={() => {}}
                   />
                 )}
@@ -1138,6 +1142,8 @@ export default function Canvas() {
                   shape={s as any}
                   isSelected={isSelected}
                   selectionColor={colorFromId}
+                  scale={scale}
+                  position={position}
                   onChange={(next) => {
                   updateShape(id, next as any)
                   const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
@@ -1162,6 +1168,8 @@ export default function Canvas() {
                     isSelected
                     selectionColor={s.selectedBy.color}
                     interactive={false}
+                    scale={scale}
+                    position={position}
                     onChange={() => {}}
                   />
                 )}
@@ -1220,6 +1228,8 @@ export default function Canvas() {
                 shape={s as any}
                 isSelected={isSelected}
                 selectionColor={colorFromId}
+                scale={scale}
+                position={position}
                 onChange={(next) => {
                   updateShape(id, next as any)
                   const latest = { ...s, ...next, selectedBy: state.byId[id]?.selectedBy }
@@ -1244,6 +1254,8 @@ export default function Canvas() {
                   isSelected
                   selectionColor={s.selectedBy.color}
                   interactive={false}
+                  scale={scale}
+                  position={position}
                   onChange={() => {}}
                 />
               )}
