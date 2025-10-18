@@ -332,6 +332,10 @@ export default function Canvas() {
 
   useEffect(() => {
     const keyHandler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || (target as any).isContentEditable)
+      if (isTyping) return
+      
       if (selectedIds.length === 0) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         selectedIds.forEach((id) => {
