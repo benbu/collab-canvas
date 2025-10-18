@@ -14,6 +14,7 @@ export type Shape = {
   fill?: string
   text?: string
   fontSize?: number
+  fontFamily?: string
   rotation?: number
   selectedBy?: { userId: string; color: string; name?: string }
 }

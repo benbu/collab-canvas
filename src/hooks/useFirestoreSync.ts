@@ -47,6 +47,7 @@ export function useFirestoreSync(
           fill: shape.fill ?? null,
           text: shape.text ?? null,
           fontSize: shape.fontSize ?? null,
+          fontFamily: (shape as any).fontFamily ?? null,
           rotation: shape.rotation ?? null,
           updatedAt: serverTimestamp(),
         }
@@ -77,6 +78,7 @@ export function useFirestoreSync(
         fill: shape.fill ?? null,
         text: shape.text ?? null,
         fontSize: shape.fontSize ?? null,
+        fontFamily: (shape as any).fontFamily ?? null,
         rotation: shape.rotation ?? null,
         updatedAt: serverTimestamp(),
       }
@@ -99,6 +101,7 @@ export function useFirestoreSync(
         fill: shape.fill ?? null,
         text: shape.text ?? null,
         fontSize: shape.fontSize ?? null,
+        fontFamily: (shape as any).fontFamily ?? null,
         rotation: shape.rotation ?? null,
         updatedAt: serverTimestamp(),
       }
@@ -135,6 +138,7 @@ export function useFirestoreSync(
             fill: (data.fill as string) ?? undefined,
             text: (data.text as string) ?? undefined,
             fontSize: (data.fontSize as number) ?? undefined,
+            fontFamily: (data.fontFamily as string) ?? undefined,
             rotation: (data.rotation as number) ?? undefined,
             selectedBy: (data.selectedBy as any) ?? undefined,
           }
