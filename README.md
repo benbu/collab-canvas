@@ -143,6 +143,6 @@ src/
 
 ---
 
-### AI Assist (Optional)
+### AI Assist
 - Serverless function in `/api/ai` can proxy to a Vercel AI Gateway
 - Default model and guardrails configurable; see `api/` and `PRD-ai-assist.md`
