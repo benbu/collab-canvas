@@ -5,6 +5,7 @@ import type Konva from 'konva'
 import { throttle } from '../../utils/throttle'
 import './Canvas.css'
 import Toolbar from '../Toolbar/Toolbar'
+import ConfirmModal from './ConfirmModal'
 import type { Tool } from '../Toolbar/Toolbar'
 import { useCanvasState } from '../../hooks/useCanvasState'
 import { useAiAssist } from '../../hooks/useAiAssist'
@@ -21,6 +22,7 @@ import { usePersistence } from '../../hooks/usePersistence'
 import { generateSeedRectangles, measureFpsFor } from '../../utils/devSeed'
 import UsernameClaim from '../../pages/UsernameClaim'
 import ShapeEditor from './ShapeEditor'
+import FloatingTextPanel from './FloatingTextPanel'
 
  
 type DragEndEvent = { target: { x?: () => number; y?: () => number } }
@@ -58,6 +60,11 @@ export default function Canvas() {
   const [tool, setTool] = useState<Tool>('select')
   const [color, setColor] = useState<string>('#1976d2')
   const [textInput, setTextInput] = useState<string>('Text')
+  const [fontFamily, setFontFamily] = useState<string>('Arial')
+  const [panelPos, setPanelPos] = useState<{ x: number; y: number }>({ x: 24, y: 24 })
+  const lastMouseRef = useRef<{ x: number; y: number } | null>(null)
+  const [panelHidden, setPanelHidden] = useState(false)
+  const lastSelectionSyncedRef = useRef<string | null>(null)
   const groupDragRef = useRef<{
     active: boolean
     draggedId: string | null
@@ -105,6 +112,10 @@ export default function Canvas() {
   )
   const writers = useFirestoreSync(roomId, upsertHandler, removeHandler)
 
+  const selectedTextIds = useMemo(() => selectedIds.filter((id) => state.byId[id]?.type === 'text'), [selectedIds, state.byId])
+  const firstTextId = useMemo(() => (selectedTextIds.length > 0 ? selectedTextIds[0] : null), [selectedTextIds])
+  const panelVisible = useMemo(() => (tool === 'text' || selectedTextIds.length > 0) && !panelHidden, [tool, selectedTextIds.length, panelHidden])
+
   const colorFromId = useMemo(() => {
     const str = selfId
     let hash = 0
@@ -143,6 +154,8 @@ export default function Canvas() {
   const stateRef = useRef(state)
   const selfIdRef = useRef(selfId)
   const writersRef = useRef(writers)
+  const [showClearModal, setShowClearModal] = useState(false)
+  const prevToolRef = useRef<Tool>(tool)
 
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { selfIdRef.current = selfId }, [selfId])
@@ -165,6 +178,49 @@ export default function Canvas() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  useEffect(() => {
+    if (firstTextId) {
+      setPanelHidden(false)
+      const m = lastMouseRef.current
+      if (m) setPanelPos({ x: m.x + 12, y: m.y + 12 })
+    }
+  }, [firstTextId])
+
+  useEffect(() => {
+    if (!panelVisible) return
+    if (firstTextId) {
+      const s = state.byId[firstTextId]
+      if (s && s.type === 'text') {
+        if (typeof s.text === 'string') setTextInput(s.text)
+        const ff = (s as any).fontFamily
+        if (typeof ff === 'string' && ff) setFontFamily(ff)
+      }
+      lastSelectionSyncedRef.current = firstTextId
+    } else {
+      lastSelectionSyncedRef.current = null
+    }
+  }, [panelVisible, firstTextId, state.byId])
+
+  useEffect(() => {
+    if (!panelVisible) {
+      lastSelectionSyncedRef.current = null
+    }
+  }, [panelVisible])
+
+  // Clear stale locks: if any shape is owned by a user no longer present, relinquish selection
+  useEffect(() => {
+    const presentIds = new Set(Object.keys(presenceById))
+    state.allIds.forEach((id) => {
+      const s = state.byId[id]
+      if (!s) return
+      const owner = s.selectedBy?.userId
+      if (owner && !presentIds.has(owner)) {
+        updateShape(id, { selectedBy: undefined } as any)
+        writers.update && writers.update({ ...s, selectedBy: null } as any)
+      }
+    })
+  }, [presenceById, state.allIds, state.byId, updateShape, writers])
 
   // Manage selection ownership (single-user) and cleanup
   useEffect(() => {
@@ -288,8 +344,16 @@ export default function Canvas() {
         selectedIds.forEach((id) => {
           const s = state.byId[id]
           if (!s) return
-          const patch: any = { ...s, x: s.x + 16, y: s.y + 16, id: undefined }
-          addShape(patch)
+          const newId = generateId()
+          const duplicate: any = {
+            ...s,
+            id: newId,
+            x: s.x + 16,
+            y: s.y + 16,
+            selectedBy: undefined,
+          }
+          addShape(duplicate)
+          writers.add && writers.add({ ...duplicate })
         })
       }
     }
@@ -332,12 +396,69 @@ export default function Canvas() {
         activeTool={tool}
         onToolChange={(t) => {
           setTool(t)
-          clearSelection()
+          if (t === 'text') {
+            setPanelHidden(false)
+            const m = lastMouseRef.current
+            if (m) setPanelPos({ x: m.x + 12, y: m.y + 12 })
+          } else {
+            clearSelection()
+          }
         }}
         color={color}
         onColorChange={setColor}
         text={textInput}
         onTextChange={setTextInput}
+        onRequestClearAll={() => {
+          prevToolRef.current = tool
+          setShowClearModal(true)
+        }}
+      />
+      {showClearModal && (
+        <ConfirmModal
+          title="Delete shapes?"
+          message="This will delete shapes not locked by others (unowned or owned by you). Shapes currently selected by other users will be kept. Are you sure?"
+          confirmText="Delete"
+          cancelText="Cancel"
+          onCancel={() => {
+            setShowClearModal(false)
+            setTool(prevToolRef.current)
+          }}
+          onConfirm={() => {
+            // Guarded deletion: skip shapes owned by other users
+            state.allIds.forEach((id) => {
+              const s = state.byId[id]
+              if (!s) return
+              const owner = s.selectedBy?.userId
+              if (!owner || owner === selfId) {
+                removeShape(id)
+                writers.remove && writers.remove(id)
+              }
+            })
+            setSelectedIds([])
+            setShowClearModal(false)
+            setTool(prevToolRef.current)
+          }}
+        />
+      )}
+      <FloatingTextPanel
+        visible={panelVisible}
+        x={panelPos.x}
+        y={panelPos.y}
+        text={textInput}
+        fontFamily={fontFamily}
+        onChangeText={setTextInput}
+        onChangeFont={setFontFamily}
+        onRequestPositionChange={(p) => setPanelPos(p)}
+        onSave={() => {
+          selectedIds.forEach((id) => {
+            const s = state.byId[id]
+            if (s?.type === 'text') {
+              updateShape(id, { text: textInput, fontFamily } as any)
+              writers.update && writers.update({ ...s, text: textInput, fontFamily, selectedBy: state.byId[id]?.selectedBy } as any)
+            }
+          })
+        }}
+        onClose={() => setPanelHidden(true)}
       />
       {import.meta.env.DEV && (
         <div style={{ position: 'fixed', bottom: 12, left: 12, display: 'flex', gap: 8, zIndex: 10 }}>
@@ -362,10 +483,11 @@ export default function Canvas() {
         </div>
       )}
       {/* AI Prompt Bar */}
-      <div style={{ position: 'fixed', bottom: 12, right: 12, display: 'flex', gap: 8, zIndex: 10, alignItems: 'center' }}>
+      <div className="aiPromptBar">
         <input
+          className="aiInput"
           type="text"
-          placeholder="Type a prompt (/) or Cmd+K"
+          placeholder="AI Commands e.g. 'Create a circle'"
           ref={promptInputRef}
           value={prompt}
           onChange={(e) => setPrompt(e.currentTarget.value)}
@@ -377,9 +499,9 @@ export default function Canvas() {
               if (res?.ok) setPrompt('')
             }
           }}
-          style={{ padding: '8px 10px', minWidth: 320 }}
         />
         <button
+          className="aiGoButton"
           onClick={async () => {
             const val = prompt.trim()
             if (!val) return
@@ -387,7 +509,7 @@ export default function Canvas() {
             if (res?.ok) setPrompt('')
           }}
         >Go</button>
-        <div aria-live="polite" style={{ minWidth: 120 }}>
+        <div className="aiPromptStatus" aria-live="polite">
           {ai.status === 'loading' && <span>Processing…</span>}
           {ai.status === 'error' && <span style={{ color: '#b91c1c' }}>{ai.lastResult?.messages?.[0] ?? 'Error'}</span>}
           {ai.status === 'success' && (
@@ -448,6 +570,10 @@ export default function Canvas() {
           }
         }}
         onMouseDown={(e: any) => {
+          const ev = (e?.evt as MouseEvent | undefined)
+          if (ev && typeof ev.clientX === 'number' && typeof ev.clientY === 'number') {
+            lastMouseRef.current = { x: ev.clientX, y: ev.clientY }
+          }
           // B) only start drag-select when clicking empty stage
           if (e?.target && stageRef.current && e.target !== stageRef.current) return
           const stage = stageRef.current!
@@ -472,12 +598,16 @@ export default function Canvas() {
             writers.add && writers.add({ ...shape })
           } else if (tool === 'text') {
             const id = generateId()
-            const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color }
+            const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color, fontFamily }
             addShape(shape)
             writers.add && writers.add({ ...shape })
           }
         }}
-        onMouseMove={() => {
+        onMouseMove={(e: any) => {
+          const ev = (e?.evt as MouseEvent | undefined)
+          if (ev && typeof ev.clientX === 'number' && typeof ev.clientY === 'number') {
+            lastMouseRef.current = { x: ev.clientX, y: ev.clientY }
+          }
           if (!selectionRect?.active) return
           const stage = stageRef.current!
           const pointer = stage.getPointerPosition()
@@ -581,6 +711,9 @@ export default function Canvas() {
               onMouseDown: (evt: ShapeMouseEvent) => {
                 if (tool !== 'select') return
                 const isShift = !!evt?.evt?.shiftKey
+                if (evt?.evt && typeof (evt.evt as any).clientX === 'number' && typeof (evt.evt as any).clientY === 'number') {
+                  lastMouseRef.current = { x: (evt.evt as any).clientX, y: (evt.evt as any).clientY }
+                }
                 if (lockedByOther) {
                   // Clicking a locked shape should clear selection unless user is attempting shift add/remove
                   if (!isShift) clearSelection()
@@ -652,7 +785,13 @@ export default function Canvas() {
                   }}
                   onCommit={() => {
                     const latest = state.byId[id]
-                    if (latest) writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                    if (latest) {
+                      if ((writers as any).updateImmediate) {
+                        ;(writers as any).updateImmediate({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                      } else {
+                        writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                      }
+                    }
                   }}
                     onBeginEdit={() => beginEdit(id)}
                     onEndEdit={() => endEdit(id)}
@@ -685,7 +824,13 @@ export default function Canvas() {
                   }}
                   onCommit={() => {
                     const latest = state.byId[id]
-                    if (latest) writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                    if (latest) {
+                      if ((writers as any).updateImmediate) {
+                        ;(writers as any).updateImmediate({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                      } else {
+                        writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                      }
+                    }
                   }}
                     onBeginEdit={() => beginEdit(id)}
                     onEndEdit={() => endEdit(id)}
@@ -720,6 +865,7 @@ export default function Canvas() {
                 offsetY={th / 2}
                 text={s.text ?? ''}
                 fontSize={fs}
+                fontFamily={(s as any).fontFamily}
                 fill={s.fill}
                 rotation={s.rotation ?? 0}
                 onDragMove={(evt: DragEndEvent) => {
@@ -760,7 +906,13 @@ export default function Canvas() {
                 }}
                 onCommit={() => {
                   const latest = state.byId[id]
-                  if (latest) writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                  if (latest) {
+                    if ((writers as any).updateImmediate) {
+                      ;(writers as any).updateImmediate({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                    } else {
+                      writers.update && writers.update({ ...latest, selectedBy: state.byId[id]?.selectedBy } as any)
+                    }
+                  }
                 }}
                 onBeginEdit={() => beginEdit(id)}
                 onEndEdit={() => endEdit(id)}
