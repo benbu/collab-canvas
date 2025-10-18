@@ -1,4 +1,4 @@
-import { Hand, MousePointer, Square, Circle as CircleIcon, Type as TypeIcon, Trash2 } from 'lucide-react'
+import { Hand, MousePointer, Square, Circle as CircleIcon, Type as TypeIcon, Trash2, Download } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 
 export type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text'
@@ -14,8 +14,9 @@ export default function Toolbar(props: {
   text: string
   onTextChange: (t: string) => void
   onRequestClearAll: () => void
+  onExportImage: () => void
 }) {
-  const { activeTool, onToolChange, color, onColorChange, text, onTextChange, onRequestClearAll } = props
+  const { activeTool, onToolChange, color, onColorChange, text, onTextChange, onRequestClearAll, onExportImage } = props
   const [recentColors, setRecentColors] = useState<string[]>([])
   const [showRecentColors, setShowRecentColors] = useState(false)
   const colorInputRef = useRef<HTMLInputElement>(null)
@@ -141,6 +142,16 @@ export default function Toolbar(props: {
       >
         <Trash2 size={18} aria-hidden />
         <span className="srOnly">Clear all shapes</span>
+      </button>
+      <button
+        onClick={onExportImage}
+        className="toolBtn"
+        title="Export as PNG"
+        data-title="Export as PNG"
+        aria-label="Export as PNG"
+      >
+        <Download size={18} aria-hidden />
+        <span className="srOnly">Export as PNG</span>
       </button>
       
       <div style={{ position: 'relative' }}>

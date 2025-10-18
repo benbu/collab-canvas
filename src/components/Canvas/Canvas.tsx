@@ -456,6 +456,25 @@ export default function Canvas() {
     [position.x, position.y, scale],
   )
 
+  const handleExportImage = useCallback(() => {
+    const stage = stageRef.current
+    if (!stage) return
+
+    // Generate PNG with high quality
+    const dataURL = stage.toDataURL({ pixelRatio: 2 })
+    
+    // Create download link
+    const link = document.createElement('a')
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    link.download = `collab-canvas-${roomId}-${timestamp}.png`
+    link.href = dataURL
+    
+    // Trigger download
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }, [roomId])
+
   return (
     <div className="canvasRoot">
       {!(hydrated && (writers as any).ready) && (
@@ -485,6 +504,7 @@ export default function Canvas() {
           prevToolRef.current = tool
           setShowClearModal(true)
         }}
+        onExportImage={handleExportImage}
       />
       {showClearModal && (
         <ConfirmModal
