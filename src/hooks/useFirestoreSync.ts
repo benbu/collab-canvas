@@ -49,6 +49,7 @@ export function useFirestoreSync(
           fontSize: shape.fontSize ?? null,
           fontFamily: (shape as any).fontFamily ?? null,
           rotation: shape.rotation ?? null,
+          zIndex: shape.zIndex ?? null,
           updatedAt: serverTimestamp(),
         }
         if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
@@ -80,6 +81,7 @@ export function useFirestoreSync(
         fontSize: shape.fontSize ?? null,
         fontFamily: (shape as any).fontFamily ?? null,
         rotation: shape.rotation ?? null,
+        zIndex: shape.zIndex ?? null,
         updatedAt: serverTimestamp(),
       }
       // Only include selectedBy if explicitly provided; otherwise preserve existing
@@ -103,6 +105,7 @@ export function useFirestoreSync(
         fontSize: shape.fontSize ?? null,
         fontFamily: (shape as any).fontFamily ?? null,
         rotation: shape.rotation ?? null,
+        zIndex: shape.zIndex ?? null,
         updatedAt: serverTimestamp(),
       }
       if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
@@ -140,6 +143,7 @@ export function useFirestoreSync(
             fontSize: (data.fontSize as number) ?? undefined,
             fontFamily: (data.fontFamily as string) ?? undefined,
             rotation: (data.rotation as number) ?? undefined,
+            zIndex: (data.zIndex as number) ?? undefined,
             selectedBy: (data.selectedBy as any) ?? undefined,
           }
           upsertRef.current(shape)
