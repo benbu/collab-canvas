@@ -93,6 +93,28 @@ export default function Canvas() {
         if (s.selectedBy !== undefined) updateShape(s.id, { selectedBy: s.selectedBy } as any)
         return
       }
+      
+      // protect selected shapes from stale upserts
+      const isSelected = selectedIds.includes(s.id)
+      if (isSelected) {
+        // if another user claims ownership, remove from our selection and apply the upsert
+        if (s.selectedBy?.userId && s.selectedBy.userId !== selfId) {
+          setSelectedIds(prev => prev.filter(id => id !== s.id))
+          // apply the full upsert since we're deselecting
+          if (state.byId[s.id]) {
+            const { id: _omit, ...patch } = s as any
+            updateShape(s.id, patch)
+          } else {
+            addShape(s)
+          }
+          return
+        }
+        
+        // otherwise, block the upsert but still merge selectedBy changes
+        if (s.selectedBy !== undefined) updateShape(s.id, { selectedBy: s.selectedBy } as any)
+        return
+      }
+      
       // upsert: if exists update else add
       if (state.byId[s.id]) {
         const { id: _omit, ...patch } = s as any
@@ -101,7 +123,7 @@ export default function Canvas() {
         addShape(s)
       }
     },
-    [state.byId, updateShape, addShape],
+    [state.byId, updateShape, addShape, selectedIds, selfId, setSelectedIds],
   )
   const removeHandler = useCallback(
     (id: string) => {
@@ -365,6 +387,53 @@ export default function Canvas() {
     return () => window.removeEventListener('keydown', keyHandler)
   }, [selectedIds, state.byId, addShape, removeShape, setSelectedIds])
 
+  useEffect(() => {
+    const arrowKeyHandler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || (target as any).isContentEditable)
+      if (isTyping) return
+
+      const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
+      if (!arrowKeys.includes(e.key)) return
+
+      e.preventDefault()
+
+      const basePanDistance = 50
+      const panDistance = e.shiftKey ? basePanDistance * 3 : basePanDistance
+      const stage = stageRef.current
+      
+      setPosition((prev) => {
+        let newPos = { ...prev }
+        
+        switch (e.key) {
+          case 'ArrowUp':
+            newPos.y = prev.y + panDistance
+            break
+          case 'ArrowDown':
+            newPos.y = prev.y - panDistance
+            break
+          case 'ArrowLeft':
+            newPos.x = prev.x + panDistance
+            break
+          case 'ArrowRight':
+            newPos.x = prev.x - panDistance
+            break
+        }
+
+        // Update stage position immediately for smooth feedback
+        if (stage) {
+          stage.position(newPos)
+          stage.batchDraw()
+        }
+
+        return newPos
+      })
+    }
+
+    window.addEventListener('keydown', arrowKeyHandler)
+    return () => window.removeEventListener('keydown', arrowKeyHandler)
+  }, [])
+
   const gridLines = useMemo(() => {
     const lines = [] as JSX.Element[]
     const start = -2500
@@ -450,18 +519,27 @@ export default function Canvas() {
         y={panelPos.y}
         text={textInput}
         fontFamily={fontFamily}
-        onChangeText={setTextInput}
-        onChangeFont={setFontFamily}
-        onRequestPositionChange={(p) => setPanelPos(p)}
-        onSave={() => {
+        onChangeText={(newText) => {
+          setTextInput(newText)
           selectedIds.forEach((id) => {
             const s = state.byId[id]
             if (s?.type === 'text') {
-              updateShape(id, { text: textInput, fontFamily } as any)
-              writers.update && writers.update({ ...s, text: textInput, fontFamily, selectedBy: state.byId[id]?.selectedBy } as any)
+              updateShape(id, { text: newText, fontFamily } as any)
+              writers.update && writers.update({ ...s, text: newText, fontFamily, selectedBy: state.byId[id]?.selectedBy } as any)
             }
           })
         }}
+        onChangeFont={(newFont) => {
+          setFontFamily(newFont)
+          selectedIds.forEach((id) => {
+            const s = state.byId[id]
+            if (s?.type === 'text') {
+              updateShape(id, { text: textInput, fontFamily: newFont } as any)
+              writers.update && writers.update({ ...s, text: textInput, fontFamily: newFont, selectedBy: state.byId[id]?.selectedBy } as any)
+            }
+          })
+        }}
+        onRequestPositionChange={(p) => setPanelPos(p)}
         onClose={() => setPanelHidden(true)}
       />
       {import.meta.env.DEV && (
