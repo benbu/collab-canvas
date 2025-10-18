@@ -10,6 +10,7 @@ export type AiTool = {
 
 const numberProp = { type: 'number' }
 const stringProp = { type: 'string' }
+const colorProp = { type: 'string', description: 'Color value (hex like #FF0000 or name like red)' }
 
 const aiTools: AiTool[] = [
   {
@@ -24,7 +25,7 @@ const aiTools: AiTool[] = [
           y: numberProp,
           width: numberProp,
           height: numberProp,
-          fill: stringProp,
+          fill: colorProp,
           rotation: numberProp,
         },
         required: ['x', 'y'],
@@ -42,7 +43,7 @@ const aiTools: AiTool[] = [
           x: numberProp,
           y: numberProp,
           radius: numberProp,
-          fill: stringProp,
+          fill: colorProp,
           rotation: numberProp,
         },
         required: ['x', 'y'],
@@ -61,7 +62,7 @@ const aiTools: AiTool[] = [
           y: numberProp,
           text: stringProp,
           fontSize: numberProp,
-          fill: stringProp,
+          fill: colorProp,
           rotation: numberProp,
         },
         required: ['x', 'y', 'text'],
@@ -82,7 +83,7 @@ const aiTools: AiTool[] = [
           width: numberProp,
           height: numberProp,
           radius: numberProp,
-          fill: stringProp,
+          fill: colorProp,
           text: stringProp,
           fontSize: numberProp,
           rotation: numberProp,
