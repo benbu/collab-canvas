@@ -42,7 +42,7 @@ export function useStageEvents({
   stateById,
   stateAllIds,
   selfId,
-  selectedIds,
+  selectedIds: _selectedIds,
   selectionRect,
   addShape,
   setSelectedIds,

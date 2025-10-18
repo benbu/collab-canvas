@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import type { Shape } from './useCanvasState'
 import { generateId } from '../utils/id'
 
@@ -37,7 +37,7 @@ export function useKeyboardShortcuts({
   onSendToBack,
   promptInputRef,
   stageRef,
-  position,
+  position: _position,
   setPosition,
 }: KeyboardShortcutsParams) {
   // AI prompt focus shortcuts
