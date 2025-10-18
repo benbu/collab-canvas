@@ -3,11 +3,67 @@
 A lightweight collaborative canvas for sketching basic shapes with real‑time cursors and presence. Built with React + TypeScript, Konva/react‑konva for rendering, and Firebase (Auth + Firestore) for authentication, realtime sync, and persistence. Deployed on Vercel.
 
 ## Features
+
+### Core Collaboration
 - **Real‑time collaboration**: Multi‑user shape creation, movement, and transforms
+  - Simultaneous multi-user editing with live updates
+  - Shape ownership and selection tracking
+  - Visual indicators for shapes selected by other users
+  - Last-write-wins conflict resolution model
 - **Presence & cursors**: Live participant list and colored cursors
+  - Color-coded cursors for each active user
+  - Real-time participant list with usernames
+  - Live cursor positions broadcast to all users
+  - Online/offline status tracking
 - **Persistent rooms**: Canvas state stored in Firestore per `roomId`
+  - Each room has unique URL (shareable links)
+  - Automatic state synchronization with Firestore
+  - Load existing canvas on room join
+  - Local state with remote persistence
+
+### Canvas Interactions
 - **Fast interactions**: Smooth pan/zoom, selection box, drag/resize/rotate
-- **Minimal UI**: Discoverable toolbar with essential shape tools
+  - Pan canvas with spacebar + drag or hand tool
+  - Zoom in/out with mouse wheel
+  - Rectangle selection box for multi-select
+  - Drag shapes individually or as groups
+  - Resize and rotate shapes with transform handles
+  - Arrow key panning (Shift for faster movement)
+- **Shape Tools & Styling**
+  - Rectangle and circle creation tools
+  - Text tool with customizable font families
+  - Color picker with recent colors palette
+  - Transform controls for all shapes (position, size, rotation)
+  - Visual feedback during shape creation and editing
+
+### Productivity Features
+- **Keyboard Shortcuts**
+  - `Delete`/`Backspace`: Delete selected shapes
+  - `Cmd/Ctrl + D`: Duplicate selected shapes
+  - `Cmd/Ctrl + ]`: Bring to front / `Cmd/Ctrl + Shift + ]`: Bring forward
+  - `Cmd/Ctrl + [`: Send to back / `Cmd/Ctrl + Shift + [`: Send backward
+  - `L`: Auto-layout selected shapes
+  - `Cmd/Ctrl + K` or `/`: Focus AI prompt input
+  - Arrow keys: Pan canvas (hold Shift for 3x speed)
+- **Canvas Controls**
+  - Auto-layout algorithm for organizing shapes
+  - Export canvas as PNG image
+  - Clear all shapes with confirmation
+  - Z-index layer management for shape stacking
+
+### AI Assistant
+- **Natural language commands**: AI-powered shape creation and manipulation
+  - Type commands like "Create a blue circle" or "Arrange shapes in a grid"
+  - Context-aware operations on selected shapes
+  - Command confirmation workflow for safety
+  - Quick access with `Cmd/Ctrl + K` or `/` shortcut
+
+### Authentication & User Management
+- **Multiple sign-in options**
+  - Email/Password authentication
+  - Google OAuth integration
+  - Username claiming system for display names
+  - Persistent user sessions across visits
 
 ## Tech Stack
 - **Frontend**: React 18, TypeScript, Vite
@@ -72,35 +128,6 @@ Key modules:
 - **Type hygiene**: Prefer type‑only imports to avoid runtime export pitfalls
 - **Error handling**: MVP‑level (console/log‑first); CI enforces build and tests
 
-## Project Structure (selected)
-```
-src/
-  components/
-    Canvas/
-      Canvas.tsx
-      CursorLayer.tsx
-      SelectionBox.tsx
-      ShapeEditor.tsx
-    Presence/
-      PresenceList.tsx
-    Toolbar/
-      Toolbar.tsx
-  contexts/
-    AuthContext.tsx
-  hooks/
-    useCanvasState.ts
-    useCanvasInteractions.ts
-    useCursorSync.ts
-    useFirestoreSync.ts
-    usePresence.ts
-  services/
-    firebase.ts
-  pages/
-    Login.tsx
-    Signup.tsx
-    UsernameClaim.tsx
-```
-
 ## Deployment
 ### Environment variables
 - Set the `VITE_FIREBASE_*` variables (see Getting Started). `.env.example` lists required keys.
@@ -136,10 +163,12 @@ src/
 - JSDOM used for DOM APIs; see `vitest.config.ts` and tests under `src/components/**/__tests__`
 
 ## Roadmap & Limitations
-- MVP error handling (surface issues via console/logs)
 - Last‑write‑wins may drop intermediate edits in extreme contention
-- No offline or conflict‑free replicated data type (CRDT) yet
-- Additional tools (images/freehand/text styles) out of initial scope
+- **Additional shape tools**: Images, freehand drawing, and styles
+- **Canvas organization**: Layers
+- **Export capabilities**: Save canvas as SVG, or JSON
+- **Comments & annotations**: Threaded discussions on specific shapes or regions
+- **Version history**: Time-travel through canvas states with undo/redo across sessions
 
 ---
 

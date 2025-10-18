@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import aiTools, { type AiTool } from '../ai/tools'
 import type { Shape } from './useCanvasState'
+import { validateColorOrDefault } from '../utils/colors'
 
 export type AiAssistStatus = 'idle' | 'loading' | 'success' | 'error' | 'needs_confirmation'
 
@@ -187,14 +188,6 @@ function numberOr(v: any, d: number): number { return isNumber(v) ? v : d }
 function positiveNumberOr(v: any, d: number): number { const n = numberOr(v, d); return n > 0 ? n : d }
 function stringOr(v: any, d: string): string { return isString(v) ? v : d }
 
-function isHexColor(s: any): boolean {
-  if (!isString(s)) return false
-  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s.trim())
-}
-
-function validateColorOrDefault(input: any, fallback: string): string {
-  return isHexColor(input) ? String(input) : fallback
-}
 
 function logStep(name: string, args: Record<string, unknown>) {
   try {
