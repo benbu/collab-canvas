@@ -8,7 +8,6 @@ type Props = {
   fontFamily: string
   onChangeText: (t: string) => void
   onChangeFont: (f: string) => void
-  onSave: () => void
   onRequestPositionChange?: (pos: { x: number; y: number }) => void
   onClose?: () => void
 }
@@ -28,7 +27,7 @@ const FONT_OPTIONS = [
   'monospace',
 ]
 
-export default function FloatingTextPanel({ visible, x, y, text, fontFamily, onChangeText, onChangeFont, onSave, onRequestPositionChange, onClose }: Props) {
+export default function FloatingTextPanel({ visible, x, y, text, fontFamily, onChangeText, onChangeFont, onRequestPositionChange, onClose }: Props) {
   const [dragging, setDragging] = useState(false)
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null)
   const posRef = useRef<{ x: number; y: number }>({ x, y })
@@ -79,9 +78,6 @@ export default function FloatingTextPanel({ visible, x, y, text, fontFamily, onC
             </option>
           ))}
         </select>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={onSave} style={{ padding: '6px 10px' }}>Save</button>
-        </div>
       </div>
     </div>
   )
