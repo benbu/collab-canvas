@@ -27,6 +27,11 @@ import DevTools from './DevTools'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useShapeOperations } from '../../hooks/useShapeOperations'
 import { useStageEvents } from '../../hooks/useStageEvents'
+import { useCharacterControl } from '../../hooks/useCharacterControl'
+import { useCharacterSync } from '../../hooks/useCharacterSync'
+import { updateCharacterPhysics } from '../../hooks/useCharacterPhysics'
+import CharacterRenderer from './CharacterRenderer'
+import type { Character } from '../../hooks/useCharacterState'
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 4
@@ -217,9 +222,66 @@ export default function Canvas() {
     setPosition,
   })
 
+  // Character state management
+  const [localCharacter, setLocalCharacter] = useState<Character | null>(null)
+  const lastPhysicsUpdate = useRef<number>(0)
+  const characterEnabled = tool === 'character' && localCharacter !== null && localCharacter.state === 'alive'
+  const characterInput = useCharacterControl(characterEnabled)
+  const characterSync = useCharacterSync(roomId, selfId, localCharacter)
+
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { selfIdRef.current = selfId }, [selfId])
   useEffect(() => { writersRef.current = writers }, [writers])
+
+  // Physics loop for character
+  useEffect(() => {
+    if (!localCharacter || localCharacter.state === 'dead') return
+
+    let animationFrameId: number
+
+    const physicsLoop = (timestamp: number) => {
+      if (lastPhysicsUpdate.current === 0) {
+        lastPhysicsUpdate.current = timestamp
+      }
+
+      const deltaTime = (timestamp - lastPhysicsUpdate.current) / 1000 // Convert to seconds
+      lastPhysicsUpdate.current = timestamp
+
+      // Calculate death threshold (bottom of visible area + buffer)
+      const deathThreshold = (-position.y / scale) + (height / scale) + 500
+
+      // Get all shapes for collision detection
+      const shapes = state.allIds.map(id => state.byId[id]).filter(Boolean)
+
+      // Update character physics
+      const updatedCharacter = updateCharacterPhysics(
+        localCharacter,
+        characterInput,
+        shapes,
+        deltaTime,
+        deathThreshold
+      )
+
+      setLocalCharacter(updatedCharacter)
+
+      // Clean up dead characters
+      if (updatedCharacter.state === 'dead') {
+        setLocalCharacter(null)
+        lastPhysicsUpdate.current = 0
+        return
+      }
+
+      animationFrameId = requestAnimationFrame(physicsLoop)
+    }
+
+    animationFrameId = requestAnimationFrame(physicsLoop)
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId)
+      }
+    }
+  }, [localCharacter, characterInput, state.allIds, state.byId, position.y, scale, height])
 
   useEffect(() => {
     if (firstTextId) {
@@ -373,6 +435,23 @@ export default function Canvas() {
   }, [handleWheel])
 
 
+  // Character placement handler
+  const handlePlaceCharacter = useCallback((x: number, y: number) => {
+    const newCharacter: Character = {
+      userId: selfId,
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      onGround: false,
+      color: colorFromId,
+      name: displayName ?? undefined,
+      state: 'alive',
+    }
+    setLocalCharacter(newCharacter)
+    lastPhysicsUpdate.current = 0
+  }, [selfId, colorFromId, displayName])
+
   // Extract stage event handlers into dedicated hook
   const {
     handleTouchStart,
@@ -402,6 +481,10 @@ export default function Canvas() {
     lastMouseRef,
     setScale,
     writers,
+    localCharacter,
+    onPlaceCharacter: handlePlaceCharacter,
+    userName: displayName ?? undefined,
+    userColor: colorFromId,
   })
 
   const toCanvasPoint = useCallback(
@@ -643,6 +726,16 @@ export default function Canvas() {
                 />
               )
             })}
+          
+          {/* Render local character */}
+          {localCharacter && localCharacter.state !== 'dead' && (
+            <CharacterRenderer character={localCharacter} />
+          )}
+          
+          {/* Render remote characters */}
+          {characterSync.characters.map((char) => (
+            <CharacterRenderer key={char.userId} character={char} />
+          ))}
         </Layer>
         <CursorLayer cursors={cursorSync.cursors} />
       </Stage>

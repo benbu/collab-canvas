@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-
-type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text'
+import type { Tool } from '../components/Toolbar/Toolbar'
 
 export function useCanvasInteractions(tool?: Tool) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
