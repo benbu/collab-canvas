@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import type { Shape } from './useCanvasState'
 import { generateId } from '../utils/id'
+import type { Character } from './useCharacterState'
 
 interface StageEventsParams {
   tool: string
@@ -26,6 +27,10 @@ interface StageEventsParams {
   writers: {
     add?: (shape: Shape) => void
   }
+  localCharacter: Character | null
+  onPlaceCharacter?: (x: number, y: number) => void
+  userName?: string
+  userColor: string
 }
 
 const MIN_SCALE = 0.25
@@ -53,6 +58,10 @@ export function useStageEvents({
   lastMouseRef,
   setScale,
   writers,
+  localCharacter,
+  onPlaceCharacter,
+  userName: _userName,
+  userColor: _userColor,
 }: StageEventsParams) {
   const toCanvasPoint = useCallback(
     (client: { x: number; y: number }) => ({ x: (client.x - position.x) / scale, y: (client.y - position.y) / scale }),
@@ -126,8 +135,14 @@ export function useStageEvents({
       const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color, fontFamily, zIndex: maxZ + 1 }
       addShape(shape)
       writers.add && writers.add({ ...shape })
+    } else if (tool === 'character') {
+      // Only place character if user doesn't already have a living character
+      if (!localCharacter || localCharacter.state === 'dead') {
+        // Place character slightly above the click point
+        onPlaceCharacter && onPlaceCharacter(canvasPoint.x, canvasPoint.y - 50)
+      }
     }
-  }, [tool, stageRef, toCanvasPoint, beginDragSelect, stateAllIds, stateById, color, textInput, fontFamily, addShape, writers, lastMouseRef])
+  }, [tool, stageRef, toCanvasPoint, beginDragSelect, stateAllIds, stateById, color, textInput, fontFamily, addShape, writers, lastMouseRef, localCharacter, onPlaceCharacter])
 
   const handleMouseMove = useCallback((e: any) => {
     const ev = (e?.evt as MouseEvent | undefined)

@@ -1,7 +1,7 @@
-import { Hand, MousePointer, Square, Circle as CircleIcon, Type as TypeIcon, Trash2, Download, LayoutGrid, ArrowUpToLine, ArrowDownToLine, ArrowUp, ArrowDown } from 'lucide-react'
+import { Hand, MousePointer, Square, Circle as CircleIcon, Type as TypeIcon, Trash2, Download, LayoutGrid, ArrowUpToLine, ArrowDownToLine, ArrowUp, ArrowDown, User } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 
-export type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text'
+export type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text' | 'character'
 
 const MAX_RECENT_COLORS = 6
 const STORAGE_KEY = 'collab-canvas-recent-colors'
@@ -89,9 +89,8 @@ export default function Toolbar(props: {
   const handleColorPickerOpen = () => {
     // Store the color when picker opens
     colorBeforePickerRef.current = color
-    if (recentColors.length > 0) {
-      setShowRecentColors(true)
-    }
+    // Show the panel when clicking the color picker (will display if there are recent colors)
+    setShowRecentColors(true)
   }
 
   const handleColorPickerClose = () => {
@@ -108,7 +107,7 @@ export default function Toolbar(props: {
   }
   return (
     <div className="toolbarRoot">
-      {(['pan', 'select', 'rect', 'circle', 'text'] as Tool[]).map((t) => {
+      {(['pan', 'select', 'rect', 'circle', 'text', 'character'] as Tool[]).map((t) => {
         const title =
           t === 'pan'
             ? 'Pan (H)'
@@ -118,7 +117,9 @@ export default function Toolbar(props: {
             ? 'Rectangle (R)'
             : t === 'circle'
             ? 'Circle (C)'
-            : 'Text (T)'
+            : t === 'text'
+            ? 'Text (T)'
+            : 'Character (P)'
         const aria = title.replace(/ \([A-Z]\)$/i, '')
         return (
           <button
@@ -134,6 +135,7 @@ export default function Toolbar(props: {
             {t === 'rect' && <Square size={18} aria-hidden />}
             {t === 'circle' && <CircleIcon size={18} aria-hidden />}
             {t === 'text' && <TypeIcon size={18} aria-hidden />}
+            {t === 'character' && <User size={18} aria-hidden />}
             <span className="srOnly">{aria}</span>
           </button>
         )
