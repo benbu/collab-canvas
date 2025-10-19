@@ -29,6 +29,10 @@ interface ShapeRendererProps {
   onDragStart?: () => void
   onDragMove?: (newX: number, newY: number) => void
   onDragEnd?: (newX: number, newY: number) => void
+  onShapeMouseEnter?: (shapeId: string) => void
+  onShapeMouseLeave?: () => void
+  onHandleMouseEnter?: (handleId: string) => void
+  onHandleMouseLeave?: () => void
   lastMouseRef: React.MutableRefObject<{ x: number; y: number } | null>
   stateById: Record<string, Shape>
 }
@@ -56,6 +60,10 @@ const ShapeRenderer = memo(function ShapeRenderer({
   onDragStart,
   onDragMove,
   onDragEnd,
+  onShapeMouseEnter,
+  onShapeMouseLeave,
+  onHandleMouseEnter,
+  onHandleMouseLeave,
   lastMouseRef,
   stateById,
 }: ShapeRendererProps) {
@@ -65,6 +73,17 @@ const ShapeRenderer = memo(function ShapeRenderer({
     x: s.x,
     y: s.y,
     draggable: !lockedByOther,
+    onMouseEnter: () => {
+      // Only trigger hover in select or pan mode
+      if (tool === 'select' || tool === 'pan') {
+        onShapeMouseEnter?.(id)
+      }
+    },
+    onMouseLeave: () => {
+      if (tool === 'select' || tool === 'pan') {
+        onShapeMouseLeave?.()
+      }
+    },
     onDragStart: () => {
       if (lockedByOther) return
       onSetIsDraggingShape(true)
@@ -174,6 +193,8 @@ const ShapeRenderer = memo(function ShapeRenderer({
           }}
           onBeginEdit={() => onBeginEdit(id)}
           onEndEdit={() => onEndEdit(id)}
+          onHandleMouseEnter={onHandleMouseEnter}
+          onHandleMouseLeave={onHandleMouseLeave}
         />
         {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
           <ShapeEditor
@@ -214,6 +235,8 @@ const ShapeRenderer = memo(function ShapeRenderer({
           }}
           onBeginEdit={() => onBeginEdit(id)}
           onEndEdit={() => onEndEdit(id)}
+          onHandleMouseEnter={onHandleMouseEnter}
+          onHandleMouseLeave={onHandleMouseLeave}
         />
         {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
           <ShapeEditor
@@ -292,6 +315,8 @@ const ShapeRenderer = memo(function ShapeRenderer({
         }}
         onBeginEdit={() => onBeginEdit(id)}
         onEndEdit={() => onEndEdit(id)}
+        onHandleMouseEnter={onHandleMouseEnter}
+        onHandleMouseLeave={onHandleMouseLeave}
       />
       {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
         <ShapeEditor

@@ -28,7 +28,7 @@ export function useFirestoreSync(
   roomId: string,
   onRemoteUpsert: (s: Shape) => void,
   onRemoteRemove: (id: string) => void,
-): Writer & { ready: boolean } {
+): Writer & { ready: boolean; flushAllPending?: () => Promise<void> } {
   // Per-shape throttle state to smooth live updates
   const lastWriteMs = useRef<Record<string, number>>({})
   const [ready, setReady] = useState(!isFirebaseEnabled)
@@ -40,6 +40,8 @@ export function useFirestoreSync(
   // Debounce state per-shape
   const pendingTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({})
   const pendingPayloads = useRef<Record<string, Shape | undefined>>({})
+  // Track latest payloads that were skipped due to per-shape throttling
+  const pendingThrottlePayloads = useRef<Record<string, Shape | undefined>>({})
   // Snapshot of last written values per shape for epsilon filtering
   const lastWrittenState = useRef<Record<string, {
     x?: number
@@ -85,6 +87,24 @@ export function useFirestoreSync(
     }
   }
 
+  // Helper to convert a Shape to RTDB payload
+  const shapeToPayload = (shape: Shape): Record<string, unknown> => ({
+    type: shape.type,
+    x: shape.x,
+    y: shape.y,
+    width: shape.width ?? null,
+    height: shape.height ?? null,
+    radius: shape.radius ?? null,
+    fill: shape.fill ?? null,
+    text: shape.text ?? null,
+    fontSize: shape.fontSize ?? null,
+    fontFamily: (shape as any).fontFamily ?? null,
+    rotation: shape.rotation ?? null,
+    zIndex: shape.zIndex ?? null,
+    updatedAt: serverTimestamp(),
+    ...(shape.selectedBy !== undefined ? { selectedBy: shape.selectedBy } : {}),
+  })
+
   const writers = useMemo<Writer>(() => ({
     add: async (shape: Shape) => {
       if (!isFirebaseEnabled || !database) return
@@ -122,30 +142,18 @@ export function useFirestoreSync(
 
       if (remaining > 0) {
         incrementCounter('rtdb-throttled', 'update')
+        // retain the most recent payload for potential flush
+        pendingThrottlePayloads.current[key] = shape
         return
       }
 
       const marker = markStart(`fs-update-${shape.id}`)
       const shapeRef = ref(database!, `rooms/${roomId}/shapes/${shape.id}`)
-      const payload: Record<string, unknown> = {
-        type: shape.type,
-        x: shape.x,
-        y: shape.y,
-        width: shape.width ?? null,
-        height: shape.height ?? null,
-        radius: shape.radius ?? null,
-        fill: shape.fill ?? null,
-        text: shape.text ?? null,
-        fontSize: shape.fontSize ?? null,
-        fontFamily: (shape as any).fontFamily ?? null,
-        rotation: shape.rotation ?? null,
-        zIndex: shape.zIndex ?? null,
-        updatedAt: serverTimestamp(),
-      }
-      // Only include selectedBy if explicitly provided; otherwise preserve existing
-      if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
+      const payload: Record<string, unknown> = shapeToPayload(shape)
       await update(shapeRef, payload)
       lastWriteMs.current[key] = Date.now()
+      // clear any throttled pending for this id since we just wrote
+      pendingThrottlePayloads.current[key] = undefined
       snapshotWritten(shape)
       markEnd(marker, 'firestore-write', 'update')
     },
@@ -153,22 +161,7 @@ export function useFirestoreSync(
       if (!isFirebaseEnabled || !database) return
       const marker = markStart(`fs-update-imm-${shape.id}`)
       const shapeRef = ref(database!, `rooms/${roomId}/shapes/${shape.id}`)
-      const payload: Record<string, unknown> = {
-        type: shape.type,
-        x: shape.x,
-        y: shape.y,
-        width: shape.width ?? null,
-        height: shape.height ?? null,
-        radius: shape.radius ?? null,
-        fill: shape.fill ?? null,
-        text: shape.text ?? null,
-        fontSize: shape.fontSize ?? null,
-        fontFamily: (shape as any).fontFamily ?? null,
-        rotation: shape.rotation ?? null,
-        zIndex: shape.zIndex ?? null,
-        updatedAt: serverTimestamp(),
-      }
-      if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
+      const payload: Record<string, unknown> = shapeToPayload(shape)
       await update(shapeRef, payload)
       // Update throttle marker so immediate write doesn't cause an immediate trailing throttled write
       lastWriteMs.current[shape.id] = Date.now()
@@ -179,6 +172,8 @@ export function useFirestoreSync(
         pendingTimers.current[shape.id] = undefined
       }
       pendingPayloads.current[shape.id] = undefined
+      // clear any throttled pending for this id since we just wrote
+      pendingThrottlePayloads.current[shape.id] = undefined
       snapshotWritten(shape)
       markEnd(marker, 'firestore-write', 'updateImmediate')
     },
@@ -191,22 +186,7 @@ export function useFirestoreSync(
       const updatesObj: Record<string, any> = {}
       
       shapes.forEach((shape) => {
-        const payload: Record<string, unknown> = {
-          type: shape.type,
-          x: shape.x,
-          y: shape.y,
-          width: shape.width ?? null,
-          height: shape.height ?? null,
-          radius: shape.radius ?? null,
-          fill: shape.fill ?? null,
-          text: shape.text ?? null,
-          fontSize: shape.fontSize ?? null,
-          fontFamily: (shape as any).fontFamily ?? null,
-          rotation: shape.rotation ?? null,
-          zIndex: shape.zIndex ?? null,
-          updatedAt: serverTimestamp(),
-        }
-        if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
+        const payload: Record<string, unknown> = shapeToPayload(shape)
         updatesObj[shape.id] = { ...(updatesObj[shape.id] || {}), ...payload }
         
         // Update throttle markers for all shapes in batch
@@ -218,6 +198,8 @@ export function useFirestoreSync(
           pendingTimers.current[shape.id] = undefined
         }
         pendingPayloads.current[shape.id] = undefined
+        // clear any throttled pending for this id since we are writing
+        pendingThrottlePayloads.current[shape.id] = undefined
         snapshotWritten(shape)
       })
       
@@ -281,6 +263,59 @@ export function useFirestoreSync(
       pendingPayloads.current[id] = undefined
     },
   }), [roomId])
+
+  // Flush any pending debounced or throttled updates immediately
+  const flushAllPending = async () => {
+    if (!isFirebaseEnabled || !database) return
+    const parentRef = ref(database!, `rooms/${roomId}/shapes`)
+    const updatesObj: Record<string, any> = {}
+
+    // Cancel all debounce timers and collect latest pending debounced payloads
+    Object.keys(pendingTimers.current).forEach((id) => {
+      const t = pendingTimers.current[id]
+      if (t) clearTimeout(t)
+      pendingTimers.current[id] = undefined
+      const pending = pendingPayloads.current[id]
+      if (pending) {
+        updatesObj[id] = { ...(updatesObj[id] || {}), ...shapeToPayload(pending) }
+      }
+      pendingPayloads.current[id] = undefined
+    })
+
+    // Collect latest payloads that were skipped due to throttling
+    Object.entries(pendingThrottlePayloads.current).forEach(([id, s]) => {
+      if (s) {
+        updatesObj[id] = { ...(updatesObj[id] || {}), ...shapeToPayload(s) }
+      }
+      pendingThrottlePayloads.current[id] = undefined
+    })
+
+    const keys = Object.keys(updatesObj)
+    if (keys.length === 0) return
+
+    await update(parentRef, updatesObj)
+    const now = Date.now()
+    keys.forEach((id) => {
+      lastWriteMs.current[id] = now
+      // Construct a minimal shape to snapshot lastWritten
+      const u = updatesObj[id]
+      snapshotWritten({
+        id,
+        type: u.type,
+        x: u.x,
+        y: u.y,
+        width: u.width ?? undefined,
+        height: u.height ?? undefined,
+        radius: u.radius ?? undefined,
+        fill: u.fill ?? undefined,
+        text: u.text ?? undefined,
+        fontSize: u.fontSize ?? undefined,
+        fontFamily: u.fontFamily ?? undefined,
+        rotation: u.rotation ?? undefined,
+        zIndex: u.zIndex ?? undefined,
+      } as any)
+    })
+  }
 
   useEffect(() => {
     if (!isFirebaseEnabled || !database) return
@@ -346,7 +381,7 @@ export function useFirestoreSync(
     }
   }, [roomId, ready])
 
-  return { ...writers, ready }
+  return { ...writers, ready, flushAllPending }
 }
 
 

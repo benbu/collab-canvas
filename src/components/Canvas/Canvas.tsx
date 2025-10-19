@@ -20,7 +20,6 @@ import PresenceList from '../Presence/PresenceList'
 import { usePresence } from '../../hooks/usePresence'
 import { usePresenceSync } from '../../hooks/usePresenceSync'
 import { useAuth } from '../../contexts/AuthContext'
-import { usePersistence } from '../../hooks/usePersistence'
 import UsernameClaim from '../../pages/UsernameClaim'
 import FloatingTextPanel from './FloatingTextPanel'
 import ShapeRenderer from './ShapeRenderer'
@@ -33,6 +32,7 @@ import { useCharacterControl } from '../../hooks/useCharacterControl'
 import { updateCharacterPhysics } from '../../hooks/useCharacterPhysics'
 import CharacterRenderer from './CharacterRenderer'
 import type { Character } from '../../hooks/useCharacterState'
+ 
 
 const MIN_SCALE = 0.25
 const MAX_SCALE = 4
@@ -80,6 +80,33 @@ export default function Canvas() {
   const editingIdsRef = useRef<Set<string>>(new Set())
   const beginEdit = useCallback((id: string) => { editingIdsRef.current.add(id) }, [])
   const endEdit = useCallback((id: string) => { editingIdsRef.current.delete(id) }, [])
+  
+  // Cursor state management
+  const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null)
+  const [hoveredHandle, setHoveredHandle] = useState<string | null>(null)
+  
+  // Compute cursor class based on tool and hover state
+  const cursorClass = useMemo(() => {
+    // Handle cursors take priority
+    if (hoveredHandle) {
+      if (hoveredHandle === 'rotate') return 'cursor-grab'
+      if (hoveredHandle.includes('nw') || hoveredHandle.includes('se')) return 'cursor-nwse-resize'
+      if (hoveredHandle.includes('ne') || hoveredHandle.includes('sw')) return 'cursor-nesw-resize'
+    }
+    
+    // Tool-based cursors
+    if (tool === 'select') {
+      return hoveredShapeId ? 'cursor-hand' : 'cursor-default'
+    }
+    if (tool === 'pan') {
+      return hoveredShapeId ? 'cursor-pointer' : 'cursor-pan'
+    }
+    if (tool === 'text') return 'cursor-text'
+    if (tool === 'rect' || tool === 'circle' || tool === 'character') return 'cursor-crosshair'
+    
+    return 'cursor-default'
+  }, [tool, hoveredShapeId, hoveredHandle])
+  
   const {
     selectedIds,
     setSelectedIds,
@@ -159,7 +186,6 @@ export default function Canvas() {
   }, [selfId])
 
   const { presenceById } = usePresence(roomId, selfId, displayName ?? undefined, colorFromId)
-  const { hydrated } = usePersistence(roomId, state, addShape)
   const ai = useAiAssist({
     roomId,
     writers: writers as any,
@@ -537,6 +563,24 @@ export default function Canvas() {
     return () => container.removeEventListener('wheel', wheelListener)
   }, [handleWheel])
 
+  // Ensure any in-flight writes are flushed on tab hide/unload
+  useEffect(() => {
+    const onVis = async () => {
+      if (document.visibilityState === 'hidden') {
+        try { await (writers as any).flushAllPending?.() } catch {}
+      }
+    }
+    const onUnload = () => {
+      try { (writers as any).flushAllPending?.() } catch {}
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('beforeunload', onUnload)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('beforeunload', onUnload)
+    }
+  }, [writers])
+
 
   // Character placement handler
   const handlePlaceCharacter = useCallback((x: number, y: number) => {
@@ -688,9 +732,28 @@ export default function Canvas() {
     return visible
   }, [state.allIds, state.byId, position.x, position.y, scale, width, height, selectedIds])
 
+  // Apply cursor class to the Konva container
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const container = stage.container()
+    if (!container) return
+    
+    // Remove all cursor classes first
+    container.classList.remove(
+      'cursor-hand', 'cursor-pan', 'cursor-text', 'cursor-crosshair',
+      'cursor-nwse-resize', 'cursor-nesw-resize', 'cursor-grab', 'cursor-pointer', 'cursor-default'
+    )
+    
+    // Add the current cursor class
+    if (cursorClass) {
+      container.classList.add(cursorClass)
+    }
+  }, [cursorClass])
+
   return (
     <div className="canvasRoot">
-      {!(hydrated && (writers as any).ready) && (
+      {!((writers as any).ready) && (
         <div className="loaderOverlay" aria-busy>
           <div className="spinner" />
         </div>
@@ -741,9 +804,12 @@ export default function Canvas() {
               const owner = s.selectedBy?.userId
               if (!owner || owner === selfId) {
                 removeShape(id)
+                writers.cancelPending && writers.cancelPending(id)
                 writers.remove && writers.remove(id)
               }
             })
+
+            // Snapshot logic removed
             setSelectedIds([])
             setShowClearModal(false)
             setTool(prevToolRef.current)
@@ -864,6 +930,10 @@ export default function Canvas() {
                   onWriterUpdateImmediate={(shape) => (writers as any).updateImmediate && (writers as any).updateImmediate(shape)}
                   onWriterUpdateDebounced={(shape) => (writers as any).updateDebounced && (writers as any).updateDebounced(shape)}
                   onWriterCancelPending={(sid) => (writers as any).cancelPending && (writers as any).cancelPending(sid)}
+                  onShapeMouseEnter={(shapeId) => setHoveredShapeId(shapeId)}
+                  onShapeMouseLeave={() => setHoveredShapeId(null)}
+                  onHandleMouseEnter={(handleId) => setHoveredHandle(handleId)}
+                  onHandleMouseLeave={() => setHoveredHandle(null)}
                   onDragStart={() => {
                     if (tool === 'select' && isSelected && selectedIds.length > 1) {
                       // Begin group drag: record origins for all selected shapes relative to dragged start

@@ -12,6 +12,7 @@ interface KeyboardShortcutsParams {
   writers: {
     add?: (shape: Shape) => void
     remove?: (id: string) => void
+    cancelPending?: (id: string) => void
   }
   onAutoLayout: () => void
   onBringToFront: () => void
@@ -75,16 +76,19 @@ export function useKeyboardShortcuts({
       if (e.key === 'Delete' || e.key === 'Backspace') {
         selectedIds.forEach((id) => {
           removeShape(id)
+          writers.cancelPending && writers.cancelPending(id)
           writers.remove && writers.remove(id)
         })
         setSelectedIds([])
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault()
+        const newIds: string[] = []
         selectedIds.forEach((id) => {
           const s = stateById[id]
           if (!s) return
           const newId = generateId()
+          newIds.push(newId)
           const duplicate: any = {
             ...s,
             id: newId,
@@ -95,6 +99,7 @@ export function useKeyboardShortcuts({
           addShape(duplicate)
           writers.add && writers.add({ ...duplicate })
         })
+        setSelectedIds(newIds)
       }
       if (e.key.toLowerCase() === 'l') {
         e.preventDefault()
