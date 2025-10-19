@@ -80,7 +80,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
       onDragMove?.(newX, newY)
       // Always broadcast dragged shape position during drag for realtime sync
       onUpdateShape(id, { x: newX, y: newY })
-      ;(onWriterUpdateDebounced ?? onWriterUpdate)({ ...s, x: newX, y: newY, selectedBy: stateById[id]?.selectedBy })
+      onWriterUpdate({ ...s, x: newX, y: newY, selectedBy: stateById[id]?.selectedBy })
     },
     onDragEnd: (evt: DragEndEvent) => {
       const newX = evt.target.x?.() ?? s.x
@@ -139,7 +139,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
             const nextY = cY - h / 2
             onDragMove?.(nextX, nextY)
             onUpdateShape(id, { x: nextX, y: nextY })
-            ;(onWriterUpdateDebounced ?? onWriterUpdate)({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
+            onWriterUpdate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
           }}
           onDragEnd={(evt: DragEndEvent) => {
             const cX = evt.target.x?.() ?? cx
@@ -163,7 +163,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
           onChange={(next) => {
             onUpdateShape(id, next as any)
             const latest = { ...s, ...next, selectedBy: stateById[id]?.selectedBy }
-            ;(onWriterUpdateDebounced ?? onWriterUpdate)(latest as any)
+            onWriterUpdate(latest as any)
           }}
           onCommit={() => {
             const latest = stateById[id]
@@ -203,7 +203,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
           onChange={(next) => {
             onUpdateShape(id, next as any)
             const latest = { ...s, ...next, selectedBy: stateById[id]?.selectedBy }
-            ;(onWriterUpdateDebounced ?? onWriterUpdate)(latest as any)
+            onWriterUpdate(latest as any)
           }}
           onCommit={() => {
             const latest = stateById[id]
@@ -257,7 +257,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
           const nextY = cY + th / 2
           onDragMove?.(nextX, nextY)
           onUpdateShape(id, { x: nextX, y: nextY })
-          ;(onWriterUpdateDebounced ?? onWriterUpdate)({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
+          onWriterUpdate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
         }}
         onDragEnd={(evt: DragEndEvent) => {
           const cX = evt.target.x?.() ?? tcx
@@ -281,7 +281,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
         onChange={(next) => {
           onUpdateShape(id, next as any)
           const latest = { ...s, ...next, selectedBy: stateById[id]?.selectedBy }
-          ;(onWriterUpdateDebounced ?? onWriterUpdate)(latest as any)
+          onWriterUpdate(latest as any)
         }}
         onCommit={() => {
           const latest = stateById[id]
@@ -318,6 +318,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
     prevProps.shape.radius === nextProps.shape.radius &&
     prevProps.shape.fill === nextProps.shape.fill &&
     prevProps.shape.text === nextProps.shape.text &&
+    prevProps.shape.fontFamily === nextProps.shape.fontFamily &&
     prevProps.shape.fontSize === nextProps.shape.fontSize &&
     prevProps.shape.rotation === nextProps.shape.rotation &&
     prevProps.isSelected === nextProps.isSelected &&

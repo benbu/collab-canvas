@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { auth, db, isFirebaseEnabled } from '../services/firebase'
+import { auth, rtdb as database, isFirebaseEnabled } from '../services/firebase'
 import { onAuthStateChanged, updateProfile, type User, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
+import { ref, get } from 'firebase/database'
 import { claimUsername, normalizeUsername } from '../services/usernames'
+import { logger } from '../utils/logger'
 
 type AuthValue = {
   user: User | null
@@ -30,12 +31,12 @@ export function AuthProvider(props: { children: React.ReactNode }) {
     const a = auth
     const unsub = onAuthStateChanged(a, async (u) => {
       setUser(u)
-      if (u && db) {
+      if (u && database) {
         try {
           const isGoogle = Array.isArray(u.providerData) && u.providerData.some((p) => p.providerId === 'google.com')
-          const profileRef = doc(db, 'userProfiles', u.uid)
-          const snap = await getDoc(profileRef)
-          const existingUsername = (snap.exists() ? (snap.data() as any)?.username : null) as string | null
+          const profileRef = ref(database!, `userProfiles/${u.uid}`)
+          const snap = await get(profileRef)
+          const existingUsername = (snap.exists() ? (snap.val() as any)?.username : null) as string | null
           if (existingUsername) {
             setDisplayNameState(existingUsername)
             localStorage.setItem('displayName', existingUsername)
@@ -100,10 +101,7 @@ export function AuthProvider(props: { children: React.ReactNode }) {
         try {
           await signInWithPopup(auth, provider)
         } catch (e: any) {
-          try {
-            // eslint-disable-next-line no-console
-            console.error('[Auth] Google sign-in failed', { code: e?.code, message: e?.message })
-          } catch {}
+          logger.error('[Auth] Google sign-in failed', { code: e?.code, message: e?.message })
           throw e
         }
       },

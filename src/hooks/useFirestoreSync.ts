@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { db, isFirebaseEnabled } from '../services/firebase'
+import { rtdb as database, isFirebaseEnabled } from '../services/firebase'
 import {
-  collection,
-  doc,
-  onSnapshot,
+  ref,
+  onChildAdded,
+  onChildChanged,
+  onChildRemoved,
+  onValue,
   serverTimestamp,
-  setDoc,
-  deleteDoc,
-  writeBatch,
-  type Unsubscribe,
-} from 'firebase/firestore'
+  set,
+  update,
+  remove,
+} from 'firebase/database'
 import type { Shape } from './useCanvasState'
 import { markStart, markEnd, incrementCounter } from '../utils/performance'
 
@@ -28,7 +29,7 @@ export function useFirestoreSync(
   onRemoteUpsert: (s: Shape) => void,
   onRemoteRemove: (id: string) => void,
 ): Writer & { ready: boolean } {
-  // Per-shape throttle state to smooth live updates similar to cursor sync (~12.5 fps)
+  // Per-shape throttle state to smooth live updates
   const lastWriteMs = useRef<Record<string, number>>({})
   const [ready, setReady] = useState(!isFirebaseEnabled)
   const upsertRef = useRef(onRemoteUpsert)
@@ -86,11 +87,10 @@ export function useFirestoreSync(
 
   const writers = useMemo<Writer>(() => ({
     add: async (shape: Shape) => {
-      if (!isFirebaseEnabled || !db) return
-      const database = db!
-      const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
+      if (!isFirebaseEnabled || !database) return
+      const shapeRef = ref(database!, `rooms/${roomId}/shapes/${shape.id}`)
       {
-        markStart(`fs-add-${shape.id}`)
+        const marker = markStart(`fs-add-${shape.id}`)
         const payload: Record<string, unknown> = {
           type: shape.type,
           x: shape.x,
@@ -107,27 +107,26 @@ export function useFirestoreSync(
           updatedAt: serverTimestamp(),
         }
         if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
-        await setDoc(ref, payload, { merge: true })
-        markEnd(`fs-add-${shape.id}`, 'firestore-write', 'add')
+        await set(shapeRef, payload)
+        markEnd(marker, 'firestore-write', 'add')
       }
     },
     update: async (shape: Shape) => {
-      if (!isFirebaseEnabled || !db) return
-      const database = db!
-      // throttle per-shape to ~80ms, with trailing
+      if (!isFirebaseEnabled || !database) return
+      // throttle per-shape to ~30ms
       const key = shape.id
       const now = Date.now()
       const last = lastWriteMs.current[key] ?? 0
-      const interval = 80
+      const interval = 30
       const remaining = interval - (now - last)
 
       if (remaining > 0) {
-        incrementCounter('firestore-throttled', 'update')
+        incrementCounter('rtdb-throttled', 'update')
         return
       }
 
-      markStart(`fs-update-${shape.id}`)
-      const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
+      const marker = markStart(`fs-update-${shape.id}`)
+      const shapeRef = ref(database!, `rooms/${roomId}/shapes/${shape.id}`)
       const payload: Record<string, unknown> = {
         type: shape.type,
         x: shape.x,
@@ -145,16 +144,15 @@ export function useFirestoreSync(
       }
       // Only include selectedBy if explicitly provided; otherwise preserve existing
       if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
-      await setDoc(ref, payload, { merge: true })
+      await update(shapeRef, payload)
       lastWriteMs.current[key] = Date.now()
       snapshotWritten(shape)
-      markEnd(`fs-update-${shape.id}`, 'firestore-write', 'update')
+      markEnd(marker, 'firestore-write', 'update')
     },
     updateImmediate: async (shape: Shape) => {
-      if (!isFirebaseEnabled || !db) return
-      const database = db!
-      markStart(`fs-update-imm-${shape.id}`)
-      const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
+      if (!isFirebaseEnabled || !database) return
+      const marker = markStart(`fs-update-imm-${shape.id}`)
+      const shapeRef = ref(database!, `rooms/${roomId}/shapes/${shape.id}`)
       const payload: Record<string, unknown> = {
         type: shape.type,
         x: shape.x,
@@ -171,7 +169,7 @@ export function useFirestoreSync(
         updatedAt: serverTimestamp(),
       }
       if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
-      await setDoc(ref, payload, { merge: true })
+      await update(shapeRef, payload)
       // Update throttle marker so immediate write doesn't cause an immediate trailing throttled write
       lastWriteMs.current[shape.id] = Date.now()
       // Cancel any pending debounced write for this shape and snapshot
@@ -182,18 +180,17 @@ export function useFirestoreSync(
       }
       pendingPayloads.current[shape.id] = undefined
       snapshotWritten(shape)
-      markEnd(`fs-update-imm-${shape.id}`, 'firestore-write', 'updateImmediate')
+      markEnd(marker, 'firestore-write', 'updateImmediate')
     },
     batchUpdate: async (shapes: Shape[]) => {
-      if (!isFirebaseEnabled || !db) return
+      if (!isFirebaseEnabled || !database) return
       if (shapes.length === 0) return
-      const database = db!
-      markStart(`fs-batch-update-${shapes.length}`)
-      const batch = writeBatch(database)
+      const marker = markStart(`fs-batch-update-${shapes.length}`)
       const now = Date.now()
+      const parentRef = ref(database!, `rooms/${roomId}/shapes`)
+      const updatesObj: Record<string, any> = {}
       
       shapes.forEach((shape) => {
-        const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
         const payload: Record<string, unknown> = {
           type: shape.type,
           x: shape.x,
@@ -210,7 +207,7 @@ export function useFirestoreSync(
           updatedAt: serverTimestamp(),
         }
         if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
-        batch.set(ref, payload, { merge: true })
+        updatesObj[shape.id] = { ...(updatesObj[shape.id] || {}), ...payload }
         
         // Update throttle markers for all shapes in batch
         lastWriteMs.current[shape.id] = now
@@ -224,19 +221,18 @@ export function useFirestoreSync(
         snapshotWritten(shape)
       })
       
-      await batch.commit()
-      markEnd(`fs-batch-update-${shapes.length}`, 'firestore-write', `batchUpdate-${shapes.length}-shapes`)
+      await update(parentRef, updatesObj)
+      markEnd(marker, 'firestore-write', `batchUpdate-${shapes.length}-shapes`)
     },
     remove: async (id: string) => {
-      if (!isFirebaseEnabled || !db) return
-      const database = db!
-      markStart(`fs-remove-${id}`)
-      const ref = doc(database, 'rooms', roomId, 'shapes', id)
-      await deleteDoc(ref)
-      markEnd(`fs-remove-${id}`, 'firestore-write', 'remove')
+      if (!isFirebaseEnabled || !database) return
+      const marker = markStart(`fs-remove-${id}`)
+      const shapeRef = ref(database!, `rooms/${roomId}/shapes/${id}`)
+      await remove(shapeRef)
+      markEnd(marker, 'firestore-write', 'remove')
     },
     updateDebounced: async (shape: Shape, delayMs = 150) => {
-      if (!isFirebaseEnabled || !db) return
+      if (!isFirebaseEnabled || !database) return
       const id = shape.id
       // Filter out micro-changes relative to last written state
       if (!isSignificantChange(id, shape)) {
@@ -248,13 +244,12 @@ export function useFirestoreSync(
         clearTimeout(existing)
       }
       pendingTimers.current[id] = setTimeout(async () => {
-        const database = db!
         const latest = pendingPayloads.current[id]
         pendingTimers.current[id] = undefined
         pendingPayloads.current[id] = undefined
         if (!latest) return
-        markStart(`fs-update-debounced-${id}`)
-        const ref = doc(database, 'rooms', roomId, 'shapes', id)
+        const marker = markStart(`fs-update-debounced-${id}`)
+        const shapeRef = ref(database!, `rooms/${roomId}/shapes/${id}`)
         const payload: Record<string, unknown> = {
           type: latest.type,
           x: latest.x,
@@ -271,10 +266,10 @@ export function useFirestoreSync(
           updatedAt: serverTimestamp(),
         }
         if (latest.selectedBy !== undefined) payload.selectedBy = latest.selectedBy
-        await setDoc(ref, payload, { merge: true })
+        await update(shapeRef, payload)
         lastWriteMs.current[id] = Date.now()
         snapshotWritten(latest)
-        markEnd(`fs-update-debounced-${id}`, 'firestore-write', 'updateDebounced')
+        markEnd(marker, 'firestore-write', 'updateDebounced')
       }, delayMs)
     },
     cancelPending: (id: string) => {
@@ -288,38 +283,67 @@ export function useFirestoreSync(
   }), [roomId])
 
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
-    const colRef = collection(db, 'rooms', roomId, 'shapes')
-    const unsub: Unsubscribe = onSnapshot(colRef, (snap) => {
-      markStart('fs-snapshot')
-      snap.docChanges().forEach((change) => {
-        const data = change.doc.data() as Record<string, unknown>
-        if (change.type === 'removed') {
-          removeRef.current(change.doc.id)
-        } else {
-          const shape: Shape = {
-            id: change.doc.id,
-            type: data.type as any,
-            x: data.x as number,
-            y: data.y as number,
-            width: (data.width as number) ?? undefined,
-            height: (data.height as number) ?? undefined,
-            radius: (data.radius as number) ?? undefined,
-            fill: (data.fill as string) ?? undefined,
-            text: (data.text as string) ?? undefined,
-            fontSize: (data.fontSize as number) ?? undefined,
-            fontFamily: (data.fontFamily as string) ?? undefined,
-            rotation: (data.rotation as number) ?? undefined,
-            zIndex: (data.zIndex as number) ?? undefined,
-            selectedBy: (data.selectedBy as any) ?? undefined,
-          }
-          upsertRef.current(shape)
-        }
-      })
-      markEnd('fs-snapshot', 'firestore-read', `snapshot-${snap.docChanges().length}-changes`)
-      if (!ready) setReady(true)
+    if (!isFirebaseEnabled || !database) return
+    const listRef = ref(database!, `rooms/${roomId}/shapes`)
+    // Set ready after first value event (including empty lists)
+    let initialized = false
+    const readyUnsub = onValue(listRef, () => {
+      if (!initialized) {
+        initialized = true
+        if (!ready) setReady(true)
+        readyUnsub()
+      }
     })
-    return () => unsub()
+
+    const unsubAdds = onChildAdded(listRef, (snap) => {
+      const data = snap.val() as Record<string, unknown>
+      const shape: Shape = {
+        id: snap.key as string,
+        type: data.type as any,
+        x: (data.x as number) ?? 0,
+        y: (data.y as number) ?? 0,
+        width: (data.width as number) ?? undefined,
+        height: (data.height as number) ?? undefined,
+        radius: (data.radius as number) ?? undefined,
+        fill: (data.fill as string) ?? undefined,
+        text: (data.text as string) ?? undefined,
+        fontSize: (data.fontSize as number) ?? undefined,
+        fontFamily: (data.fontFamily as string) ?? undefined,
+        rotation: (data.rotation as number) ?? undefined,
+        zIndex: (data.zIndex as number) ?? undefined,
+        selectedBy: (data.selectedBy as any) ?? undefined,
+      }
+      upsertRef.current(shape)
+    })
+    const unsubChanges = onChildChanged(listRef, (snap) => {
+      const data = snap.val() as Record<string, unknown>
+      const shape: Shape = {
+        id: snap.key as string,
+        type: data.type as any,
+        x: (data.x as number) ?? 0,
+        y: (data.y as number) ?? 0,
+        width: (data.width as number) ?? undefined,
+        height: (data.height as number) ?? undefined,
+        radius: (data.radius as number) ?? undefined,
+        fill: (data.fill as string) ?? undefined,
+        text: (data.text as string) ?? undefined,
+        fontSize: (data.fontSize as number) ?? undefined,
+        fontFamily: (data.fontFamily as string) ?? undefined,
+        rotation: (data.rotation as number) ?? undefined,
+        zIndex: (data.zIndex as number) ?? undefined,
+        selectedBy: (data.selectedBy as any) ?? undefined,
+      }
+      upsertRef.current(shape)
+    })
+    const unsubRemoves = onChildRemoved(listRef, (snap) => {
+      removeRef.current(snap.key as string)
+    })
+
+    return () => {
+      unsubAdds()
+      unsubChanges()
+      unsubRemoves()
+    }
   }, [roomId, ready])
 
   return { ...writers, ready }

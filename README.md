@@ -68,20 +68,20 @@ A lightweight collaborative canvas for sketching basic shapes with real‑time c
 ## Tech Stack
 - **Frontend**: React 18, TypeScript, Vite
 - **Canvas**: Konva + react‑konva
-- **Backend**: Firebase Auth + Firestore
+- **Backend**: Firebase Auth + Realtime Database
 - **Testing**: Vitest + Testing Library
 - **Deploy**: Vercel (static hosting) + Firebase (rules)
 
 ## Getting Started
 1. **Prerequisites**
    - Node 18+
-   - Firebase project (for Auth + Firestore)
+   - Firebase project (for Auth + Realtime Database)
 2. **Install**
    ```bash
    npm install
    ```
 3. **Configure environment**
-   - Copy `.env.example` to `.env` and fill your Firebase config:
+   - Create `.env` and fill your Firebase config:
      ```
      VITE_FIREBASE_API_KEY=
      VITE_FIREBASE_AUTH_DOMAIN=
@@ -89,6 +89,7 @@ A lightweight collaborative canvas for sketching basic shapes with real‑time c
      VITE_FIREBASE_STORAGE_BUCKET=
      VITE_FIREBASE_MESSAGING_SENDER_ID=
      VITE_FIREBASE_APP_ID=
+     VITE_FIREBASE_DATABASE_URL=
      ```
      `.env` is git‑ignored.
 4. **Run dev server**
@@ -112,7 +113,7 @@ Key modules:
 - `src/components/Presence/PresenceList.tsx`: Participant list
 - `src/hooks/useCanvasState.ts`: Local canvas state and reducers
 - `src/hooks/useCanvasInteractions.ts`: Drag/transform/pan/zoom logic
-- `src/hooks/useFirestoreSync.ts`: Shape synchronization with Firestore
+- `src/hooks/useFirestoreSync.ts`: Shape synchronization with Realtime Database
 - `src/hooks/useCursorSync.ts`: Cursor broadcast/subscribe
 - `src/hooks/usePresence.ts`: Presence heartbeat and subscription
 - `src/services/firebase.ts`: Firebase initialization
@@ -140,20 +141,18 @@ Key modules:
 ### Firebase
 - Enable Auth providers (Email/Password, Google) in Firebase Console
 - Add your Vercel domains under Auth > Settings > Authorized domains (e.g., `your-app.vercel.app`, `*.vercel.app`)
-- Firestore rules (MVP, included in `firestore.rules`):
-  ```
-  rules_version = '2';
-  service cloud.firestore {
-    match /databases/{database}/documents {
-      match /rooms/{roomId}/{document=**} {
-        allow read, write: if request.auth != null;
-      }
+- Realtime Database rules (MVP, included in `database.rules.json`):
+  ```json
+  {
+    "rules": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     }
   }
   ```
 - Deploy rules (requires Firebase CLI + project configured):
   ```bash
-  firebase deploy --only firestore:rules
+  firebase deploy --only database
   ```
 
 ## Testing
@@ -161,6 +160,30 @@ Key modules:
 - Command: `npm test -- --run`
 - `react‑konva` is mocked in tests to avoid canvas environment issues
 - JSDOM used for DOM APIs; see `vitest.config.ts` and tests under `src/components/**/__tests__`
+
+## Debugging & Logging
+The app includes a centralized logging system controlled by URL parameters:
+
+### Log Levels
+Add `?logLevel=<level>` to your URL to enable logging:
+- `?logLevel=debug` - Shows all logs (debug, info, warn, error)
+- `?logLevel=info` - Shows info, warnings, and errors
+- `?logLevel=warn` - Shows warnings and errors only
+- `?logLevel=error` - Shows errors only
+- (no parameter) - No logging (default)
+
+### Examples
+```
+http://localhost:5173/?logLevel=debug
+http://localhost:5173/room/abc123?logLevel=info
+```
+
+### Performance Monitoring
+Add `?perf=true` to enable performance monitoring:
+- Real-time FPS tracking
+- Operation timing for Firestore, rendering, character physics
+- Export performance reports as JSON
+- Visual overlay with detailed metrics
 
 ## Roadmap & Limitations
 - Last‑write‑wins may drop intermediate edits in extreme contention

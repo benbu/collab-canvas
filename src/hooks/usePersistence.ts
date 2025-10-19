@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { db, isFirebaseEnabled } from '../services/firebase'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { rtdb as database, isFirebaseEnabled } from '../services/firebase'
+import { ref, get, serverTimestamp, set } from 'firebase/database'
 import type { Shape } from './useCanvasState'
 
 type CanvasState = { byId: Record<string, Shape>; allIds: string[] }
@@ -16,15 +16,20 @@ export function usePersistence(
   useEffect(() => {
     let cancelled = false
     const hydrate = async () => {
-      if (!isFirebaseEnabled || !db) {
+      // If live sync has already populated shapes, skip hydration
+      if (state.allIds.length > 0) {
+        setHydrated(true)
+        return
+      }
+      if (!isFirebaseEnabled || !database) {
         setHydrated(true)
         return
       }
       try {
-        const ref = doc(db, 'rooms', roomId, 'meta', 'snapshot')
-        const snap = await getDoc(ref)
+        const snapRef = ref(database!, `rooms/${roomId}/meta/snapshot`)
+        const snap = await get(snapRef)
         if (snap.exists()) {
-          const data = snap.data() as any
+          const data = snap.val() as any
           const shapesById = (data?.shapesById ?? {}) as Record<string, any>
           const allIds = (data?.allIds ?? []) as string[]
           // restore order
@@ -40,16 +45,15 @@ export function usePersistence(
     }
     void hydrate()
     return () => { cancelled = true }
-  }, [roomId, addShape])
+  }, [roomId, addShape, state.allIds.length])
 
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
+    if (!isFirebaseEnabled || !database) return
     const writeSnapshot = async () => {
       if (writing.current) return
       writing.current = true
       try {
-        const database = db!
-        const ref = doc(database, 'rooms', roomId, 'meta', 'snapshot')
+        const snapRef = ref(database!, `rooms/${roomId}/meta/snapshot`)
         const shapesById: Record<string, any> = {}
         for (const id of state.allIds) {
           const s = state.byId[id]
@@ -67,22 +71,20 @@ export function usePersistence(
             rotation: s.rotation ?? null,
           }
         }
-        await setDoc(ref, { shapesById, allIds: state.allIds, updatedAt: serverTimestamp() }, { merge: true })
+        await set(snapRef, { shapesById, allIds: state.allIds, updatedAt: serverTimestamp() })
       } finally {
         writing.current = false
       }
     }
-    const interval = setInterval(() => { void writeSnapshot() }, 5000)
     const onVis = () => { if (document.visibilityState === 'hidden') void writeSnapshot() }
     const onUnload = () => { void writeSnapshot() }
     document.addEventListener('visibilitychange', onVis)
     window.addEventListener('beforeunload', onUnload)
     return () => {
-      clearInterval(interval)
       document.removeEventListener('visibilitychange', onVis)
       window.removeEventListener('beforeunload', onUnload)
     }
-  }, [roomId, state])
+  }, [roomId, state.allIds, state.byId])
 
   return { hydrated }
 }

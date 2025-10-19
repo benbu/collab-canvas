@@ -4,6 +4,7 @@ import { Stage, Layer, Line } from 'react-konva'
 import type Konva from 'konva'
 import { throttle } from '../../utils/throttle'
 import { recordFrame, markStart, markEnd, incrementCounter } from '../../utils/performance'
+import { logger } from '../../utils/logger'
 import './Canvas.css'
 import Toolbar from '../Toolbar/Toolbar'
 import ConfirmModal from './ConfirmModal'
@@ -66,7 +67,7 @@ export default function Canvas() {
   const [color, setColor] = useState<string>('#1976d2')
   const [textInput, setTextInput] = useState<string>('Text')
   const [fontFamily, setFontFamily] = useState<string>('Arial')
-  const [panelPos, setPanelPos] = useState<{ x: number; y: number }>({ x: 24, y: 24 })
+  const [panelPos, setPanelPos] = useState<{ x: number; y: number }>({ x: 60, y: 12 })
   const lastMouseRef = useRef<{ x: number; y: number } | null>(null)
   const [panelHidden, setPanelHidden] = useState(false)
   const lastSelectionSyncedRef = useRef<string | null>(null)
@@ -92,16 +93,16 @@ export default function Canvas() {
   } = useCanvasInteractions(tool)
   const upsertHandler = useCallback(
     (s: any) => {
-      markStart('upsert-handler')
+      const marker = markStart('upsert-handler')
       // ignore remote upserts while locally editing this shape to avoid visual jumps
       if (editingIdsRef.current.has(s.id)) {
         // still merge remote selectedBy while editing, so remote ownership is visible
         if (s.selectedBy !== undefined) updateShape(s.id, { selectedBy: s.selectedBy } as any)
-        markEnd('upsert-handler', 'shape-edit', 'blocked-editing')
+        markEnd(marker, 'shape-edit', 'blocked-editing')
         return
       }
       
-      // protect selected shapes from stale upserts
+      // protect selected shapes owned by another user; allow self-selected to update unless actively editing
       const isSelected = selectedIds.includes(s.id)
       if (isSelected) {
         // if another user claims ownership, remove from our selection and apply the upsert
@@ -114,24 +115,21 @@ export default function Canvas() {
           } else {
             addShape(s)
           }
-          markEnd('upsert-handler', 'shape-edit', 'deselect-and-update')
+          markEnd(marker, 'shape-edit', 'deselect-and-update')
           return
         }
-        
-        // otherwise, block the upsert but still merge selectedBy changes
+        // For self-selected shapes not actively editing, proceed to apply the update below
         if (s.selectedBy !== undefined) updateShape(s.id, { selectedBy: s.selectedBy } as any)
-        markEnd('upsert-handler', 'shape-edit', 'blocked-selected')
-        return
       }
       
       // upsert: if exists update else add
       if (state.byId[s.id]) {
         const { id: _omit, ...patch } = s as any
         updateShape(s.id, patch)
-        markEnd('upsert-handler', 'shape-edit', 'update')
+        markEnd(marker, 'shape-edit', 'update')
       } else {
         addShape(s)
-        markEnd('upsert-handler', 'shape-edit', 'add')
+        markEnd(marker, 'shape-edit', 'add')
       }
     },
     [state.byId, updateShape, addShape, selectedIds, selfId, setSelectedIds],
@@ -208,9 +206,14 @@ export default function Canvas() {
     roomId,
     selfId,
     () => {
-      const p = stageRef.current?.getPointerPosition()
-      if (!p) return null
-      const c = toCanvasPoint(p)
+      const stage = stageRef.current
+      if (!stage) return null
+      const container = stage.container()
+      const client = lastMouseRef.current
+      if (!container || !client) return null
+      const rect = container.getBoundingClientRect()
+      const stagePoint = { x: client.x - rect.left, y: client.y - rect.top }
+      const c = toCanvasPoint(stagePoint)
       return { x: c.x, y: c.y }
     },
     localCharacter,
@@ -242,6 +245,15 @@ export default function Canvas() {
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { selfIdRef.current = selfId }, [selfId])
   useEffect(() => { writersRef.current = writers }, [writers])
+
+  // Keep last mouse position updated globally to avoid relying on Konva pointer state
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      lastMouseRef.current = { x: e.clientX, y: e.clientY }
+    }
+    window.addEventListener('mousemove', onMove)
+    return () => window.removeEventListener('mousemove', onMove)
+  }, [])
 
   // FPS tracking when no character is active
   useEffect(() => {
@@ -329,7 +341,7 @@ export default function Canvas() {
     if (!localCharacter || localCharacter.state !== 'alive') return
 
     const checkAndPan = () => {
-      markStart('auto-pan')
+      const marker = markStart('auto-pan')
       const charScreenX = localCharacter.x * scale + position.x
       const charScreenY = localCharacter.y * scale + position.y
       const margin = 100
@@ -367,7 +379,7 @@ export default function Canvas() {
           stage.batchDraw()
         }
       }
-      markEnd('auto-pan', 'auto-pan', 'check')
+      markEnd(marker, 'auto-pan', 'check')
     }
 
     const intervalId = window.setInterval(checkAndPan, 16) // ~60fps
@@ -377,8 +389,7 @@ export default function Canvas() {
   useEffect(() => {
     if (firstTextId) {
       setPanelHidden(false)
-      const m = lastMouseRef.current
-      if (m) setPanelPos({ x: m.x + 12, y: m.y + 12 })
+      setPanelPos({ x: 60, y: 12 })
     }
   }, [firstTextId])
 
@@ -492,7 +503,8 @@ export default function Canvas() {
         evt.preventDefault()
         const stage = stageRef.current
         if (!stage) return
-
+        // Ensure Konva has current pointer from this event
+        try { (stage as any).setPointersPositions?.(evt as any) } catch {}
         const oldScale = scale
         const pointer = stage.getPointerPosition()
         if (!pointer) return
@@ -621,7 +633,7 @@ export default function Canvas() {
 
   // Viewport culling: only render shapes visible in current viewport
   const visibleShapeIds = useMemo(() => {
-    markStart('viewport-culling')
+    const marker = markStart('viewport-culling')
     const buffer = 200 // Extra buffer to prevent pop-in during pan
     const viewportBounds = {
       left: (-position.x / scale) - buffer,
@@ -672,7 +684,7 @@ export default function Canvas() {
       return visible
     })
 
-    markEnd('viewport-culling', 'render-cycle', `filtered-${visible.length}-of-${state.allIds.length}`)
+    markEnd(marker, 'render-cycle', `filtered-${visible.length}-of-${state.allIds.length}`)
     return visible
   }, [state.allIds, state.byId, position.x, position.y, scale, width, height, selectedIds])
 
@@ -691,8 +703,7 @@ export default function Canvas() {
           setTool(t)
           if (t === 'text') {
             setPanelHidden(false)
-            const m = lastMouseRef.current
-            if (m) setPanelPos({ x: m.x + 12, y: m.y + 12 })
+            setPanelPos({ x: 60, y: 12 })
           } else {
             clearSelection()
           }
@@ -755,12 +766,14 @@ export default function Canvas() {
               textShapes.push({ ...s, text: newText, fontFamily, selectedBy: state.byId[id]?.selectedBy } as any)
             }
           })
-          // Use batch write for multiple shapes
+          // Use batch write for multiple shapes; immediate write for single shape to avoid throttle lag
           if (textShapes.length > 1) {
             writers.batchUpdate && writers.batchUpdate(textShapes)
           } else if (textShapes.length === 1) {
-            writers.update && writers.update(textShapes[0])
+            (writers as any).updateImmediate && (writers as any).updateImmediate(textShapes[0])
           }
+          const stage = stageRef.current
+          if (stage) stage.batchDraw()
         }}
         onChangeFont={(newFont) => {
           setFontFamily(newFont)
@@ -768,16 +781,19 @@ export default function Canvas() {
           selectedIds.forEach((id) => {
             const s = state.byId[id]
             if (s?.type === 'text') {
-              updateShape(id, { text: textInput, fontFamily: newFont } as any)
-              textShapes.push({ ...s, text: textInput, fontFamily: newFont, selectedBy: state.byId[id]?.selectedBy } as any)
+              updateShape(id, { fontFamily: newFont } as any)
+              const updatedShape = { ...s, text: s.text ?? textInput, fontFamily: newFont, selectedBy: state.byId[id]?.selectedBy }
+              textShapes.push(updatedShape as any)
             }
           })
-          // Use batch write for multiple shapes
+          // Use batch write for multiple shapes; immediate write for single shape to avoid throttle lag
           if (textShapes.length > 1) {
             writers.batchUpdate && writers.batchUpdate(textShapes)
           } else if (textShapes.length === 1) {
-            writers.update && writers.update(textShapes[0])
+            (writers as any).updateImmediate && (writers as any).updateImmediate(textShapes[0])
           }
+          const stage = stageRef.current
+          if (stage) stage.batchDraw()
         }}
         onRequestPositionChange={(p) => setPanelPos(p)}
         onClose={() => setPanelHidden(true)}
@@ -874,6 +890,11 @@ export default function Canvas() {
                         const next = { x: origin.x + dx, y: origin.y + dy }
                         if (sid === id) return // dragged shape will be finalized on dragEnd
                         updateShape(sid, next)
+                        // Broadcast other shapes in the group during drag (writers are throttled per-shape ~30ms)
+                        const ss = state.byId[sid]
+                        if (ss) {
+                          writers.update && writers.update({ ...ss, ...next, selectedBy: state.byId[sid]?.selectedBy } as any)
+                        }
                       })
                     }
                   }}
@@ -914,9 +935,9 @@ export default function Canvas() {
           
           {/* Render remote characters */}
           {(() => {
-            console.log('[Canvas] Rendering remote characters, count:', presenceSync.characters.length, presenceSync.characters)
+            logger.debug('[Canvas] Rendering remote characters, count:', presenceSync.characters.length, presenceSync.characters)
             return presenceSync.characters.map((char) => {
-              console.log('[Canvas] Rendering remote character:', char.userId, char)
+              logger.debug('[Canvas] Rendering remote character:', char.userId, char)
               return <CharacterRenderer key={char.userId} character={char} />
             })
           })()}

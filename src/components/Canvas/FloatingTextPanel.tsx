@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Type } from 'lucide-react'
 
 type Props = {
   visible: boolean
@@ -62,11 +63,13 @@ export default function FloatingTextPanel({ visible, x, y, text, fontFamily, onC
   if (!visible) return null
 
   return (
-    <div style={{ position: 'fixed', left: x, top: y, zIndex: 40, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', width: 320 }}>
-      <div onMouseDown={onHeaderMouseDown} style={{ cursor: 'move', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderBottom: '1px solid #e5e7eb', borderTopLeftRadius: 8, borderTopRightRadius: 8, background: '#f9fafb' }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: '#111827' }}>Text settings</div>
+    <div style={{ position: 'fixed', left: x, top: y, zIndex: 40, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, boxShadow: '0 10px 30px rgba(0,0,0,0.15)', width: 160 }}>
+      <div onMouseDown={onHeaderMouseDown} style={{ cursor: 'move', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 0, margin: 0, height: 18, borderBottom: '1px solid #e5e7eb', borderTopLeftRadius: 8, borderTopRightRadius: 8, background: '#4b5563', paddingLeft: 6, paddingRight: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Type size={12} color="#ffffff" aria-hidden />
+        </div>
         {onClose && (
-          <button onClick={onClose} aria-label="Close" title="Close" style={{ border: 0, background: 'transparent', color: '#6b7280', cursor: 'pointer' }}>×</button>
+          <button onClick={onClose} aria-label="Close" title="Close" style={{ border: 0, background: 'transparent', color: '#d1d5db', cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>×</button>
         )}
       </div>
       <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>

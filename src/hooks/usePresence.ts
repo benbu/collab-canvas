@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { db, isFirebaseEnabled } from '../services/firebase'
-import { collection, doc, onSnapshot, serverTimestamp, setDoc, deleteDoc, type Unsubscribe } from 'firebase/firestore'
+import { rtdb as database, isFirebaseEnabled } from '../services/firebase'
+import { ref, onChildAdded, onChildChanged, onChildRemoved, serverTimestamp, update, onDisconnect } from 'firebase/database'
 
 export type PresenceUser = {
   id: string
@@ -18,45 +18,53 @@ export function usePresence(
 ) {
   const [presenceById, setPresenceById] = useState<Record<string, PresenceUser>>({})
   const intervalRef = useRef<number | null>(null)
-  const unsubRef = useRef<Unsubscribe | null>(null)
+  const unsubRef = useRef<(() => void) | null>(null)
 
   // Subscribe to presence collection
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
-    const colRef = collection(db, 'rooms', roomId, 'presence')
-    const unsub = onSnapshot(colRef, (snap) => {
-      const next: Record<string, PresenceUser> = {}
-      snap.forEach((docSnap) => {
-        const d = docSnap.data() as any
-        next[docSnap.id] = {
-          id: docSnap.id,
-          name: d.name as string | undefined,
-          color: d.color as string | undefined,
-          lastSeenMs: (d.lastSeen && typeof d.lastSeen.toMillis === 'function') ? d.lastSeen.toMillis() : undefined,
-          loggedIn: (d.loggedIn as boolean | undefined) ?? undefined,
-        }
-      })
-      setPresenceById(next)
+    if (!isFirebaseEnabled || !database) return
+    const listRef = ref(database!, `rooms/${roomId}/presence`)
+    const next: Record<string, PresenceUser> = {}
+    const unsubAdd = onChildAdded(listRef, (s) => {
+      const d = s.val() as any
+      next[s.key as string] = {
+        id: s.key as string,
+        name: d.name as string | undefined,
+        color: d.color as string | undefined,
+        lastSeenMs: typeof d.lastSeen === 'number' ? d.lastSeen : undefined,
+        loggedIn: (d.loggedIn as boolean | undefined) ?? undefined,
+      }
+      setPresenceById({ ...next })
     })
-    unsubRef.current = unsub
+    const unsubChange = onChildChanged(listRef, (s) => {
+      const d = s.val() as any
+      next[s.key as string] = {
+        id: s.key as string,
+        name: d.name as string | undefined,
+        color: d.color as string | undefined,
+        lastSeenMs: typeof d.lastSeen === 'number' ? d.lastSeen : undefined,
+        loggedIn: (d.loggedIn as boolean | undefined) ?? undefined,
+      }
+      setPresenceById({ ...next })
+    })
+    const unsubRemove = onChildRemoved(listRef, (s) => {
+      delete next[s.key as string]
+      setPresenceById({ ...next })
+    })
+    unsubRef.current = () => { unsubAdd(); unsubChange(); unsubRemove() }
     return () => {
-      unsub()
+      unsubAdd(); unsubChange(); unsubRemove()
       unsubRef.current = null
     }
   }, [roomId])
 
   // Upsert self on mount and start heartbeat
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
-    const database = db!
-    const selfRef = doc(database, 'rooms', roomId, 'presence', selfId)
+    if (!isFirebaseEnabled || !database) return
+    const selfRef = ref(database!, `rooms/${roomId}/presence/${selfId}`)
 
     const writeHeartbeat = async () => {
-      await setDoc(
-        selfRef,
-        { name: selfName, color: selfColor, loggedIn: true, lastSeen: serverTimestamp() },
-        { merge: true },
-      )
+      await update(selfRef, { name: selfName, color: selfColor, loggedIn: true, lastSeen: serverTimestamp() } as any)
     }
 
     void writeHeartbeat()
@@ -64,10 +72,9 @@ export function usePresence(
     const id = window.setInterval(() => { void writeHeartbeat() }, 15000)
     intervalRef.current = id
 
-    const onUnload = () => {
-      // Best-effort delete of presence on disconnect
-      void deleteDoc(selfRef)
-    }
+    try { onDisconnect(selfRef).remove() } catch {}
+
+    const onUnload = () => { /* onDisconnect handles cleanup */ }
     window.addEventListener('beforeunload', onUnload)
 
     return () => {
@@ -76,7 +83,7 @@ export function usePresence(
         intervalRef.current = null
       }
       window.removeEventListener('beforeunload', onUnload)
-      void deleteDoc(selfRef)
+      try { onDisconnect(selfRef).cancel() } catch {}
     }
   }, [roomId, selfId, selfName, selfColor])
 

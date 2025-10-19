@@ -1,5 +1,5 @@
-import { db, isFirebaseEnabled } from './firebase'
-import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { rtdb as database, isFirebaseEnabled } from './firebase'
+import { ref, get, runTransaction, serverTimestamp } from 'firebase/database'
 
 export type UserProfile = {
   username: string
@@ -23,9 +23,9 @@ export function normalizeUsername(username: string): string {
 export async function isUsernameAvailable(username: string): Promise<boolean> {
   const lc = normalizeUsername(username)
   if (!lc) return false
-  if (!isFirebaseEnabled || !db) return true
-  const ref = doc(db!, 'usernames', lc)
-  const snap = await getDoc(ref)
+  if (!isFirebaseEnabled || !database) return true
+  const usernameRef = ref(database!, `usernames/${lc}`)
+  const snap = await get(usernameRef)
   return !snap.exists()
 }
 
@@ -34,25 +34,25 @@ export async function claimUsername(params: { uid: string; username: string }): 
   const raw = params.username
   const lc = normalizeUsername(raw)
   if (!lc || !uid) return { ok: false, code: 'invalid' }
-  if (!isFirebaseEnabled || !db) return { ok: true }
+  if (!isFirebaseEnabled || !database) return { ok: true }
 
   try {
-    await runTransaction(db!, async (tx) => {
-      const usernameRef = doc(db!, 'usernames', lc)
-      const profileRef = doc(db!, 'userProfiles', uid)
-
-      const existing = await tx.get(usernameRef)
-      if (existing.exists() && (existing.data() as any)?.uid !== uid) {
-        throw new Error('unavailable')
+    // Atomic claim: create username if absent, otherwise abort (unavailable)
+    const usernameRef = ref(database!, `usernames/${lc}`)
+    const result = await runTransaction(usernameRef, (current) => {
+      if (current && current.uid && current.uid !== uid) {
+        return; // abort by returning undefined
       }
-
-      tx.set(usernameRef, { uid, createdAt: serverTimestamp() })
-      tx.set(
-        profileRef,
-        { username: raw, updatedAt: serverTimestamp(), createdAt: serverTimestamp() },
-        { merge: true },
-      )
+      return { uid, createdAt: serverTimestamp() }
     })
+    if (!result.committed) return { ok: false, code: 'unavailable' }
+    const profileRef = ref(database!, `userProfiles/${uid}`)
+    await runTransaction(profileRef, (current) => ({
+      ...(current || {}),
+      username: raw,
+      updatedAt: serverTimestamp(),
+      createdAt: (current && (current as any).createdAt) ? (current as any).createdAt : serverTimestamp(),
+    }))
     return { ok: true }
   } catch (e: any) {
     if (e?.message === 'unavailable') return { ok: false, code: 'unavailable' }
