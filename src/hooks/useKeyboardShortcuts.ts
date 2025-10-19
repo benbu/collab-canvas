@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { Shape } from './useCanvasState'
+import type { Tool } from '../components/Toolbar/Toolbar'
 import { generateId } from '../utils/id'
 
 interface KeyboardShortcutsParams {
@@ -21,6 +22,8 @@ interface KeyboardShortcutsParams {
   stageRef: React.RefObject<any>
   position: { x: number; y: number }
   setPosition: (pos: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => void
+  activeTool: Tool
+  hasLocalCharacter: boolean
 }
 
 export function useKeyboardShortcuts({
@@ -39,6 +42,8 @@ export function useKeyboardShortcuts({
   stageRef,
   position: _position,
   setPosition,
+  activeTool,
+  hasLocalCharacter,
 }: KeyboardShortcutsParams) {
   // AI prompt focus shortcuts
   useEffect(() => {
@@ -131,6 +136,12 @@ export function useKeyboardShortcuts({
       const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
       if (!arrowKeys.includes(e.key)) return
 
+      // Only pan with arrow keys when:
+      // - Pan tool is selected, OR
+      // - Character tool is not selected AND user doesn't have a character
+      const shouldPan = activeTool === 'pan' || (activeTool !== 'character' && !hasLocalCharacter)
+      if (!shouldPan) return
+
       e.preventDefault()
 
       const basePanDistance = 50
@@ -167,6 +178,6 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', arrowKeyHandler)
     return () => window.removeEventListener('keydown', arrowKeyHandler)
-  }, [stageRef, setPosition])
+  }, [stageRef, setPosition, activeTool, hasLocalCharacter])
 }
 

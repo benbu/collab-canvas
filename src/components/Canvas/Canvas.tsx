@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Stage, Layer, Line } from 'react-konva'
 import type Konva from 'konva'
 import { throttle } from '../../utils/throttle'
+import { recordFrame, markStart, markEnd, incrementCounter } from '../../utils/performance'
 import './Canvas.css'
 import Toolbar from '../Toolbar/Toolbar'
 import ConfirmModal from './ConfirmModal'
@@ -92,10 +93,12 @@ export default function Canvas() {
   } = useCanvasInteractions(tool)
   const upsertHandler = useCallback(
     (s: any) => {
+      markStart('upsert-handler')
       // ignore remote upserts while locally editing this shape to avoid visual jumps
       if (editingIdsRef.current.has(s.id)) {
         // still merge remote selectedBy while editing, so remote ownership is visible
         if (s.selectedBy !== undefined) updateShape(s.id, { selectedBy: s.selectedBy } as any)
+        markEnd('upsert-handler', 'shape-edit', 'blocked-editing')
         return
       }
       
@@ -112,11 +115,13 @@ export default function Canvas() {
           } else {
             addShape(s)
           }
+          markEnd('upsert-handler', 'shape-edit', 'deselect-and-update')
           return
         }
         
         // otherwise, block the upsert but still merge selectedBy changes
         if (s.selectedBy !== undefined) updateShape(s.id, { selectedBy: s.selectedBy } as any)
+        markEnd('upsert-handler', 'shape-edit', 'blocked-selected')
         return
       }
       
@@ -124,8 +129,10 @@ export default function Canvas() {
       if (state.byId[s.id]) {
         const { id: _omit, ...patch } = s as any
         updateShape(s.id, patch)
+        markEnd('upsert-handler', 'shape-edit', 'update')
       } else {
         addShape(s)
+        markEnd('upsert-handler', 'shape-edit', 'add')
       }
     },
     [state.byId, updateShape, addShape, selectedIds, selfId, setSelectedIds],
@@ -203,6 +210,13 @@ export default function Canvas() {
     writers,
   })
 
+  // Character state management
+  const [localCharacter, setLocalCharacter] = useState<Character | null>(null)
+  const lastPhysicsUpdate = useRef<number>(0)
+  const characterEnabled = tool === 'character' && localCharacter !== null && localCharacter.state === 'alive'
+  const characterInput = useCharacterControl(characterEnabled)
+  const characterSync = useCharacterSync(roomId, selfId, localCharacter)
+
   // Extract keyboard shortcuts into dedicated hook
   useKeyboardShortcuts({
     selectedIds,
@@ -220,18 +234,27 @@ export default function Canvas() {
     stageRef,
     position,
     setPosition,
+    activeTool: tool,
+    hasLocalCharacter: localCharacter !== null && localCharacter.state === 'alive',
   })
-
-  // Character state management
-  const [localCharacter, setLocalCharacter] = useState<Character | null>(null)
-  const lastPhysicsUpdate = useRef<number>(0)
-  const characterEnabled = tool === 'character' && localCharacter !== null && localCharacter.state === 'alive'
-  const characterInput = useCharacterControl(characterEnabled)
-  const characterSync = useCharacterSync(roomId, selfId, localCharacter)
 
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { selfIdRef.current = selfId }, [selfId])
   useEffect(() => { writersRef.current = writers }, [writers])
+
+  // FPS tracking when no character is active
+  useEffect(() => {
+    if (localCharacter && localCharacter.state === 'alive') return // Physics loop handles FPS tracking
+    
+    let frameId: number
+    const trackFps = () => {
+      recordFrame()
+      frameId = requestAnimationFrame(trackFps)
+    }
+    frameId = requestAnimationFrame(trackFps)
+    
+    return () => cancelAnimationFrame(frameId)
+  }, [localCharacter])
 
   // Physics loop for character
   useEffect(() => {
@@ -240,11 +263,27 @@ export default function Canvas() {
     let animationFrameId: number
 
     const physicsLoop = (timestamp: number) => {
+      recordFrame() // Track FPS
+      
       if (lastPhysicsUpdate.current === 0) {
         lastPhysicsUpdate.current = timestamp
       }
 
       const deltaTime = (timestamp - lastPhysicsUpdate.current) / 1000 // Convert to seconds
+
+      // Check if character is idle (no input and no significant velocity)
+      const hasInput = characterInput.left || characterInput.right || characterInput.jump
+      const velocityThreshold = 0.5 // pixels/second
+      const hasVelocity = Math.abs(localCharacter.vx) > velocityThreshold || Math.abs(localCharacter.vy) > velocityThreshold
+      const isIdle = !hasInput && !hasVelocity && localCharacter.onGround
+
+      if (isIdle) {
+        // Character is idle, skip physics update but continue loop
+        incrementCounter('character-physics', 'skipped-idle')
+        animationFrameId = requestAnimationFrame(physicsLoop)
+        return
+      }
+
       lastPhysicsUpdate.current = timestamp
 
       // Calculate death threshold (bottom of visible area + buffer)
@@ -282,6 +321,56 @@ export default function Canvas() {
       }
     }
   }, [localCharacter, characterInput, state.allIds, state.byId, position.y, scale, height])
+
+  // Auto-pan camera when character approaches screen edges
+  useEffect(() => {
+    if (!localCharacter || localCharacter.state !== 'alive') return
+
+    const checkAndPan = () => {
+      markStart('auto-pan')
+      const charScreenX = localCharacter.x * scale + position.x
+      const charScreenY = localCharacter.y * scale + position.y
+      const margin = 100
+
+      let needsPan = false
+      let deltaX = 0
+      let deltaY = 0
+
+      if (charScreenX < margin) {
+        deltaX = (margin - charScreenX) * 0.1
+        needsPan = true
+      } else if (charScreenX > width - margin) {
+        deltaX = (width - margin - charScreenX) * 0.1
+        needsPan = true
+      }
+
+      if (charScreenY < margin) {
+        deltaY = (margin - charScreenY) * 0.1
+        needsPan = true
+      } else if (charScreenY > height - margin) {
+        deltaY = (height - margin - charScreenY) * 0.1
+        needsPan = true
+      }
+
+      if (needsPan) {
+        setPosition(prev => ({
+          x: prev.x + deltaX,
+          y: prev.y + deltaY
+        }))
+        
+        // Update stage position immediately for smooth feedback
+        const stage = stageRef.current
+        if (stage) {
+          stage.position({ x: position.x + deltaX, y: position.y + deltaY })
+          stage.batchDraw()
+        }
+      }
+      markEnd('auto-pan', 'auto-pan', 'check')
+    }
+
+    const intervalId = window.setInterval(checkAndPan, 16) // ~60fps
+    return () => window.clearInterval(intervalId)
+  }, [localCharacter, position, scale, width, height, stageRef])
 
   useEffect(() => {
     if (firstTextId) {
@@ -528,6 +617,63 @@ export default function Canvas() {
     document.body.removeChild(link)
   }, [roomId])
 
+  // Viewport culling: only render shapes visible in current viewport
+  const visibleShapeIds = useMemo(() => {
+    markStart('viewport-culling')
+    const buffer = 200 // Extra buffer to prevent pop-in during pan
+    const viewportBounds = {
+      left: (-position.x / scale) - buffer,
+      right: ((-position.x + width) / scale) + buffer,
+      top: (-position.y / scale) - buffer,
+      bottom: ((-position.y + height) / scale) + buffer,
+    }
+
+    const visible = state.allIds.filter(id => {
+      const shape = state.byId[id]
+      if (!shape) return false
+
+      // Always render selected shapes (being edited)
+      if (selectedIds.includes(id)) return true
+
+      // Calculate shape bounds based on type
+      let shapeLeft = shape.x
+      let shapeRight = shape.x
+      let shapeTop = shape.y
+      let shapeBottom = shape.y
+
+      if (shape.type === 'rect') {
+        const w = shape.width ?? 0
+        const h = shape.height ?? 0
+        shapeRight = shape.x + w
+        shapeBottom = shape.y + h
+      } else if (shape.type === 'circle') {
+        const r = shape.radius ?? 0
+        shapeLeft = shape.x - r
+        shapeRight = shape.x + r
+        shapeTop = shape.y - r
+        shapeBottom = shape.y + r
+      } else if (shape.type === 'text') {
+        const fs = shape.fontSize ?? 18
+        const textWidth = (shape.text?.length ?? 1) * fs * 0.6
+        shapeRight = shape.x + textWidth
+        shapeBottom = shape.y + fs
+      }
+
+      // Check if shape intersects with viewport
+      const visible = (
+        shapeRight >= viewportBounds.left &&
+        shapeLeft <= viewportBounds.right &&
+        shapeBottom >= viewportBounds.top &&
+        shapeTop <= viewportBounds.bottom
+      )
+
+      return visible
+    })
+
+    markEnd('viewport-culling', 'render-cycle', `filtered-${visible.length}-of-${state.allIds.length}`)
+    return visible
+  }, [state.allIds, state.byId, position.x, position.y, scale, width, height, selectedIds])
+
   return (
     <div className="canvasRoot">
       {!(hydrated && (writers as any).ready) && (
@@ -646,11 +792,13 @@ export default function Canvas() {
         onMouseUp={handleMouseUp}
       >
         <Layer listening={false}>{gridLines}</Layer>
+        
+        {/* Shapes Layer - Updates when shapes change */}
         <Layer>
           {selectionRect?.active && (
             <SelectionBox x={selectionRect.x} y={selectionRect.y} w={selectionRect.w} h={selectionRect.h} color={colorFromId} />
           )}
-          {state.allIds
+          {visibleShapeIds
             .slice()
             .sort((a, b) => {
               const zA = state.byId[a]?.zIndex ?? 0
@@ -726,17 +874,26 @@ export default function Canvas() {
                 />
               )
             })}
-          
+        </Layer>
+        
+        {/* Characters Layer - Updates at physics rate (60fps) */}
+        <Layer>
           {/* Render local character */}
           {localCharacter && localCharacter.state !== 'dead' && (
             <CharacterRenderer character={localCharacter} />
           )}
           
           {/* Render remote characters */}
-          {characterSync.characters.map((char) => (
-            <CharacterRenderer key={char.userId} character={char} />
-          ))}
+          {(() => {
+            console.log('[Canvas] Rendering remote characters, count:', characterSync.characters.length, characterSync.characters)
+            return characterSync.characters.map((char) => {
+              console.log('[Canvas] Rendering remote character:', char.userId, char)
+              return <CharacterRenderer key={char.userId} character={char} />
+            })
+          })()}
         </Layer>
+        
+        {/* Cursors Layer - Updates frequently */}
         <CursorLayer cursors={cursorSync.cursors} />
       </Stage>
     </div>
