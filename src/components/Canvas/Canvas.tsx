@@ -8,7 +8,7 @@ import './Canvas.css'
 import Toolbar from '../Toolbar/Toolbar'
 import ConfirmModal from './ConfirmModal'
 import type { Tool } from '../Toolbar/Toolbar'
-import { useCanvasState } from '../../hooks/useCanvasState'
+import { useCanvasState, type Shape } from '../../hooks/useCanvasState'
 import { useAiAssist } from '../../hooks/useAiAssist'
 import { useCanvasInteractions } from '../../hooks/useCanvasInteractions'
 import SelectionBox from './SelectionBox'
@@ -16,8 +16,8 @@ import { useFirestoreSync } from '../../hooks/useFirestoreSync'
 import { generateId } from '../../utils/id'
 import CursorLayer from './CursorLayer'
 import PresenceList from '../Presence/PresenceList'
-import { useCursorSync } from '../../hooks/useCursorSync'
 import { usePresence } from '../../hooks/usePresence'
+import { usePresenceSync } from '../../hooks/usePresenceSync'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePersistence } from '../../hooks/usePersistence'
 import UsernameClaim from '../../pages/UsernameClaim'
@@ -29,7 +29,6 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useShapeOperations } from '../../hooks/useShapeOperations'
 import { useStageEvents } from '../../hooks/useStageEvents'
 import { useCharacterControl } from '../../hooks/useCharacterControl'
-import { useCharacterSync } from '../../hooks/useCharacterSync'
 import { updateCharacterPhysics } from '../../hooks/useCharacterPhysics'
 import CharacterRenderer from './CharacterRenderer'
 import type { Character } from '../../hooks/useCharacterState'
@@ -161,18 +160,6 @@ export default function Canvas() {
     return `hsl(${hue}, 70%, 50%)`
   }, [selfId])
 
-  const cursorSync = useCursorSync(
-    roomId,
-    selfId,
-    () => {
-      const p = stageRef.current?.getPointerPosition()
-      if (!p) return null
-      const c = toCanvasPoint(p)
-      return { x: c.x, y: c.y }
-    },
-    displayName ?? undefined,
-    colorFromId,
-  )
   const { presenceById } = usePresence(roomId, selfId, displayName ?? undefined, colorFromId)
   const { hydrated } = usePersistence(roomId, state, addShape)
   const ai = useAiAssist({
@@ -215,7 +202,21 @@ export default function Canvas() {
   const lastPhysicsUpdate = useRef<number>(0)
   const characterEnabled = tool === 'character' && localCharacter !== null && localCharacter.state === 'alive'
   const characterInput = useCharacterControl(characterEnabled)
-  const characterSync = useCharacterSync(roomId, selfId, localCharacter)
+  
+  // Unified presence sync (cursor + character)
+  const presenceSync = usePresenceSync(
+    roomId,
+    selfId,
+    () => {
+      const p = stageRef.current?.getPointerPosition()
+      if (!p) return null
+      const c = toCanvasPoint(p)
+      return { x: c.x, y: c.y }
+    },
+    localCharacter,
+    displayName ?? undefined,
+    colorFromId,
+  )
 
   // Extract keyboard shortcuts into dedicated hook
   useKeyboardShortcuts({
@@ -280,6 +281,7 @@ export default function Canvas() {
       if (isIdle) {
         // Character is idle, skip physics update but continue loop
         incrementCounter('character-physics', 'skipped-idle')
+        lastPhysicsUpdate.current = timestamp // Update timestamp to prevent deltaTime accumulation
         animationFrameId = requestAnimationFrame(physicsLoop)
         return
       }
@@ -745,23 +747,37 @@ export default function Canvas() {
         fontFamily={fontFamily}
         onChangeText={(newText) => {
           setTextInput(newText)
+          const textShapes: Shape[] = []
           selectedIds.forEach((id) => {
             const s = state.byId[id]
             if (s?.type === 'text') {
               updateShape(id, { text: newText, fontFamily } as any)
-              writers.update && writers.update({ ...s, text: newText, fontFamily, selectedBy: state.byId[id]?.selectedBy } as any)
+              textShapes.push({ ...s, text: newText, fontFamily, selectedBy: state.byId[id]?.selectedBy } as any)
             }
           })
+          // Use batch write for multiple shapes
+          if (textShapes.length > 1) {
+            writers.batchUpdate && writers.batchUpdate(textShapes)
+          } else if (textShapes.length === 1) {
+            writers.update && writers.update(textShapes[0])
+          }
         }}
         onChangeFont={(newFont) => {
           setFontFamily(newFont)
+          const textShapes: Shape[] = []
           selectedIds.forEach((id) => {
             const s = state.byId[id]
             if (s?.type === 'text') {
               updateShape(id, { text: textInput, fontFamily: newFont } as any)
-              writers.update && writers.update({ ...s, text: textInput, fontFamily: newFont, selectedBy: state.byId[id]?.selectedBy } as any)
+              textShapes.push({ ...s, text: textInput, fontFamily: newFont, selectedBy: state.byId[id]?.selectedBy } as any)
             }
           })
+          // Use batch write for multiple shapes
+          if (textShapes.length > 1) {
+            writers.batchUpdate && writers.batchUpdate(textShapes)
+          } else if (textShapes.length === 1) {
+            writers.update && writers.update(textShapes[0])
+          }
         }}
         onRequestPositionChange={(p) => setPanelPos(p)}
         onClose={() => setPanelHidden(true)}
@@ -830,6 +846,8 @@ export default function Canvas() {
                   onEndEdit={endEdit}
                   onWriterUpdate={(shape) => writers.update && writers.update(shape)}
                   onWriterUpdateImmediate={(shape) => (writers as any).updateImmediate && (writers as any).updateImmediate(shape)}
+                  onWriterUpdateDebounced={(shape) => (writers as any).updateDebounced && (writers as any).updateDebounced(shape)}
+                  onWriterCancelPending={(sid) => (writers as any).cancelPending && (writers as any).cancelPending(sid)}
                   onDragStart={() => {
                     if (tool === 'select' && isSelected && selectedIds.length > 1) {
                       // Begin group drag: record origins for all selected shapes relative to dragged start
@@ -856,13 +874,24 @@ export default function Canvas() {
                         const next = { x: origin.x + dx, y: origin.y + dy }
                         if (sid === id) return // dragged shape will be finalized on dragEnd
                         updateShape(sid, next)
-                        const so = state.byId[sid]
-                        const selBy = state.byId[sid]?.selectedBy
-                        if (so) writers.update && writers.update({ ...so, ...next, selectedBy: selBy } as any)
                       })
                     }
                   }}
                   onDragEnd={() => {
+                    // Use batch write for group operations
+                    if (groupDragRef.current.active && selectedIds.length > 1) {
+                      const shapesToUpdate = selectedIds
+                        .map(id => state.byId[id])
+                        .filter((s): s is typeof s & { id: string } => !!s)
+                      if (shapesToUpdate.length > 0) {
+                        writers.batchUpdate && writers.batchUpdate(shapesToUpdate)
+                      }
+                      // Cancel any pending debounced writes for these shapes to avoid trailing duplicates
+                      selectedIds.forEach((sid) => {
+                        (writers as any).cancelPending && (writers as any).cancelPending(sid)
+                      })
+                    }
+                    
                     // Clear group drag state
                     groupDragRef.current.active = false
                     groupDragRef.current.draggedId = null
@@ -885,8 +914,8 @@ export default function Canvas() {
           
           {/* Render remote characters */}
           {(() => {
-            console.log('[Canvas] Rendering remote characters, count:', characterSync.characters.length, characterSync.characters)
-            return characterSync.characters.map((char) => {
+            console.log('[Canvas] Rendering remote characters, count:', presenceSync.characters.length, presenceSync.characters)
+            return presenceSync.characters.map((char) => {
               console.log('[Canvas] Rendering remote character:', char.userId, char)
               return <CharacterRenderer key={char.userId} character={char} />
             })
@@ -894,7 +923,7 @@ export default function Canvas() {
         </Layer>
         
         {/* Cursors Layer - Updates frequently */}
-        <CursorLayer cursors={cursorSync.cursors} />
+        <CursorLayer cursors={presenceSync.cursors} />
       </Stage>
     </div>
   )

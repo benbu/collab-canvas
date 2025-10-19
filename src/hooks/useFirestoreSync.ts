@@ -7,6 +7,7 @@ import {
   serverTimestamp,
   setDoc,
   deleteDoc,
+  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore'
 import type { Shape } from './useCanvasState'
@@ -16,7 +17,10 @@ type Writer = {
   add: (shape: Shape) => Promise<void>
   update: (shape: Shape) => Promise<void>
   updateImmediate: (shape: Shape) => Promise<void>
+  batchUpdate: (shapes: Shape[]) => Promise<void>
   remove: (id: string) => Promise<void>
+  updateDebounced?: (shape: Shape, delayMs?: number) => Promise<void>
+  cancelPending?: (id: string) => void
 }
 
 export function useFirestoreSync(
@@ -31,6 +35,54 @@ export function useFirestoreSync(
   const removeRef = useRef(onRemoteRemove)
   useEffect(() => { upsertRef.current = onRemoteUpsert }, [onRemoteUpsert])
   useEffect(() => { removeRef.current = onRemoteRemove }, [onRemoteRemove])
+
+  // Debounce state per-shape
+  const pendingTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({})
+  const pendingPayloads = useRef<Record<string, Shape | undefined>>({})
+  // Snapshot of last written values per shape for epsilon filtering
+  const lastWrittenState = useRef<Record<string, {
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+    radius?: number
+    rotation?: number
+    text?: string
+    fontSize?: number
+    fontFamily?: string
+  }>>({})
+
+  const isSignificantChange = (id: string, next: Shape): boolean => {
+    const prev = lastWrittenState.current[id]
+    if (!prev) return true
+    const posEps = 0.5
+    const sizeEps = 0.5
+    const rotEps = 1
+    if (typeof next.x === 'number' && typeof prev.x === 'number' && Math.abs(next.x - prev.x) > posEps) return true
+    if (typeof next.y === 'number' && typeof prev.y === 'number' && Math.abs(next.y - prev.y) > posEps) return true
+    if (typeof next.width === 'number' && typeof prev.width === 'number' && Math.abs((next.width ?? 0) - (prev.width ?? 0)) > sizeEps) return true
+    if (typeof next.height === 'number' && typeof prev.height === 'number' && Math.abs((next.height ?? 0) - (prev.height ?? 0)) > sizeEps) return true
+    if (typeof next.radius === 'number' && typeof prev.radius === 'number' && Math.abs((next.radius ?? 0) - (prev.radius ?? 0)) > sizeEps) return true
+    if (typeof next.rotation === 'number' && typeof prev.rotation === 'number' && Math.abs((next.rotation ?? 0) - (prev.rotation ?? 0)) > rotEps) return true
+    if ((next.text ?? '') !== (prev.text ?? '')) return true
+    if (typeof next.fontSize === 'number' && typeof prev.fontSize === 'number' && Math.abs((next.fontSize ?? 0) - (prev.fontSize ?? 0)) > sizeEps) return true
+    if ((next.fontFamily ?? '') !== (prev.fontFamily ?? '')) return true
+    return false
+  }
+
+  const snapshotWritten = (s: Shape) => {
+    lastWrittenState.current[s.id] = {
+      x: s.x,
+      y: s.y,
+      width: s.width,
+      height: s.height,
+      radius: s.radius,
+      rotation: s.rotation,
+      text: s.text,
+      fontSize: s.fontSize,
+      fontFamily: (s as any).fontFamily,
+    }
+  }
 
   const writers = useMemo<Writer>(() => ({
     add: async (shape: Shape) => {
@@ -95,6 +147,7 @@ export function useFirestoreSync(
       if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
       await setDoc(ref, payload, { merge: true })
       lastWriteMs.current[key] = Date.now()
+      snapshotWritten(shape)
       markEnd(`fs-update-${shape.id}`, 'firestore-write', 'update')
     },
     updateImmediate: async (shape: Shape) => {
@@ -121,7 +174,58 @@ export function useFirestoreSync(
       await setDoc(ref, payload, { merge: true })
       // Update throttle marker so immediate write doesn't cause an immediate trailing throttled write
       lastWriteMs.current[shape.id] = Date.now()
+      // Cancel any pending debounced write for this shape and snapshot
+      const t = pendingTimers.current[shape.id]
+      if (t) {
+        clearTimeout(t)
+        pendingTimers.current[shape.id] = undefined
+      }
+      pendingPayloads.current[shape.id] = undefined
+      snapshotWritten(shape)
       markEnd(`fs-update-imm-${shape.id}`, 'firestore-write', 'updateImmediate')
+    },
+    batchUpdate: async (shapes: Shape[]) => {
+      if (!isFirebaseEnabled || !db) return
+      if (shapes.length === 0) return
+      const database = db!
+      markStart(`fs-batch-update-${shapes.length}`)
+      const batch = writeBatch(database)
+      const now = Date.now()
+      
+      shapes.forEach((shape) => {
+        const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
+        const payload: Record<string, unknown> = {
+          type: shape.type,
+          x: shape.x,
+          y: shape.y,
+          width: shape.width ?? null,
+          height: shape.height ?? null,
+          radius: shape.radius ?? null,
+          fill: shape.fill ?? null,
+          text: shape.text ?? null,
+          fontSize: shape.fontSize ?? null,
+          fontFamily: (shape as any).fontFamily ?? null,
+          rotation: shape.rotation ?? null,
+          zIndex: shape.zIndex ?? null,
+          updatedAt: serverTimestamp(),
+        }
+        if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
+        batch.set(ref, payload, { merge: true })
+        
+        // Update throttle markers for all shapes in batch
+        lastWriteMs.current[shape.id] = now
+        // Cancel any pending debounced write and snapshot
+        const t = pendingTimers.current[shape.id]
+        if (t) {
+          clearTimeout(t)
+          pendingTimers.current[shape.id] = undefined
+        }
+        pendingPayloads.current[shape.id] = undefined
+        snapshotWritten(shape)
+      })
+      
+      await batch.commit()
+      markEnd(`fs-batch-update-${shapes.length}`, 'firestore-write', `batchUpdate-${shapes.length}-shapes`)
     },
     remove: async (id: string) => {
       if (!isFirebaseEnabled || !db) return
@@ -130,6 +234,56 @@ export function useFirestoreSync(
       const ref = doc(database, 'rooms', roomId, 'shapes', id)
       await deleteDoc(ref)
       markEnd(`fs-remove-${id}`, 'firestore-write', 'remove')
+    },
+    updateDebounced: async (shape: Shape, delayMs = 150) => {
+      if (!isFirebaseEnabled || !db) return
+      const id = shape.id
+      // Filter out micro-changes relative to last written state
+      if (!isSignificantChange(id, shape)) {
+        return
+      }
+      pendingPayloads.current[id] = shape
+      const existing = pendingTimers.current[id]
+      if (existing) {
+        clearTimeout(existing)
+      }
+      pendingTimers.current[id] = setTimeout(async () => {
+        const database = db!
+        const latest = pendingPayloads.current[id]
+        pendingTimers.current[id] = undefined
+        pendingPayloads.current[id] = undefined
+        if (!latest) return
+        markStart(`fs-update-debounced-${id}`)
+        const ref = doc(database, 'rooms', roomId, 'shapes', id)
+        const payload: Record<string, unknown> = {
+          type: latest.type,
+          x: latest.x,
+          y: latest.y,
+          width: latest.width ?? null,
+          height: latest.height ?? null,
+          radius: latest.radius ?? null,
+          fill: latest.fill ?? null,
+          text: latest.text ?? null,
+          fontSize: latest.fontSize ?? null,
+          fontFamily: (latest as any).fontFamily ?? null,
+          rotation: latest.rotation ?? null,
+          zIndex: latest.zIndex ?? null,
+          updatedAt: serverTimestamp(),
+        }
+        if (latest.selectedBy !== undefined) payload.selectedBy = latest.selectedBy
+        await setDoc(ref, payload, { merge: true })
+        lastWriteMs.current[id] = Date.now()
+        snapshotWritten(latest)
+        markEnd(`fs-update-debounced-${id}`, 'firestore-write', 'updateDebounced')
+      }, delayMs)
+    },
+    cancelPending: (id: string) => {
+      const t = pendingTimers.current[id]
+      if (t) {
+        clearTimeout(t)
+        pendingTimers.current[id] = undefined
+      }
+      pendingPayloads.current[id] = undefined
     },
   }), [roomId])
 
