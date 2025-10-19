@@ -15,6 +15,7 @@ interface ShapeOperationsParams {
   writers: {
     update?: (shape: Shape) => void
     updateImmediate?: (shape: Shape) => void
+    batchUpdate?: (shapes: Shape[]) => void
   }
 }
 
@@ -49,18 +50,26 @@ export function useShapeOperations({
     const layoutResults = autoLayout(selectedShapes)
     
     // Apply new positions
+    const updatedShapes: Shape[] = []
     layoutResults.forEach(result => {
       const shape = stateById[result.id]
       if (!shape) return
       
       updateShape(result.id, { x: result.x, y: result.y })
-      writers.update && writers.update({ 
+      updatedShapes.push({ 
         ...shape, 
         x: result.x, 
         y: result.y, 
         selectedBy: stateById[result.id]?.selectedBy 
       } as any)
     })
+    
+    // Use batch write for multiple shapes
+    if (updatedShapes.length > 1 && writers.batchUpdate) {
+      writers.batchUpdate(updatedShapes)
+    } else if (updatedShapes.length === 1 && writers.update) {
+      writers.update(updatedShapes[0])
+    }
   }, [selectedIds, stateById, selfId, updateShape, writers])
 
   const handleBringToFront = useCallback(() => {
@@ -85,12 +94,18 @@ export function useShapeOperations({
     const selectedShapes = validIds.map(id => stateById[id]).filter(Boolean)
     selectedShapes.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
     
-    // Sync to Firestore with new zIndex values
-    selectedShapes.forEach((shape, index) => {
-      if (writers.updateImmediate) {
-        writers.updateImmediate({ ...shape, zIndex: maxZ + 1 + index, selectedBy: shape.selectedBy } as any)
-      }
-    })
+    // Sync to Firestore with new zIndex values using batch write
+    const updatedShapes = selectedShapes.map((shape, index) => ({
+      ...shape,
+      zIndex: maxZ + 1 + index,
+      selectedBy: shape.selectedBy
+    } as any))
+    
+    if (updatedShapes.length > 1 && writers.batchUpdate) {
+      writers.batchUpdate(updatedShapes)
+    } else if (updatedShapes.length === 1 && writers.updateImmediate) {
+      writers.updateImmediate(updatedShapes[0])
+    }
   }, [selectedIds, stateById, stateAllIds, selfId, moveShapeToFront, writers])
 
   const handleBringForward = useCallback(() => {
@@ -113,7 +128,8 @@ export function useShapeOperations({
     const allShapes = stateAllIds.map(id => stateById[id]).filter(Boolean)
     const zIndexValues = Array.from(new Set(allShapes.map(s => s.zIndex ?? 0))).sort((a, b) => a - b)
     
-    // Sync to Firestore with new zIndex values
+    // Sync to Firestore with new zIndex values using batch write
+    const updatedShapes: Shape[] = []
     validIds.forEach(id => {
       const shape = stateById[id]
       if (!shape) return
@@ -129,10 +145,14 @@ export function useShapeOperations({
         newZ = currentZ + 1
       }
       
-      if (writers.updateImmediate) {
-        writers.updateImmediate({ ...shape, zIndex: newZ, selectedBy: shape.selectedBy } as any)
-      }
+      updatedShapes.push({ ...shape, zIndex: newZ, selectedBy: shape.selectedBy } as any)
     })
+    
+    if (updatedShapes.length > 1 && writers.batchUpdate) {
+      writers.batchUpdate(updatedShapes)
+    } else if (updatedShapes.length === 1 && writers.updateImmediate) {
+      writers.updateImmediate(updatedShapes[0])
+    }
   }, [selectedIds, stateById, stateAllIds, selfId, moveShapeForward, writers])
 
   const handleSendBackward = useCallback(() => {
@@ -155,7 +175,8 @@ export function useShapeOperations({
     const allShapes = stateAllIds.map(id => stateById[id]).filter(Boolean)
     const zIndexValues = Array.from(new Set(allShapes.map(s => s.zIndex ?? 0))).sort((a, b) => a - b)
     
-    // Sync to Firestore with new zIndex values
+    // Sync to Firestore with new zIndex values using batch write
+    const updatedShapes: Shape[] = []
     validIds.forEach(id => {
       const shape = stateById[id]
       if (!shape) return
@@ -171,10 +192,14 @@ export function useShapeOperations({
         newZ = currentZ - 1
       }
       
-      if (writers.updateImmediate) {
-        writers.updateImmediate({ ...shape, zIndex: newZ, selectedBy: shape.selectedBy } as any)
-      }
+      updatedShapes.push({ ...shape, zIndex: newZ, selectedBy: shape.selectedBy } as any)
     })
+    
+    if (updatedShapes.length > 1 && writers.batchUpdate) {
+      writers.batchUpdate(updatedShapes)
+    } else if (updatedShapes.length === 1 && writers.updateImmediate) {
+      writers.updateImmediate(updatedShapes[0])
+    }
   }, [selectedIds, stateById, stateAllIds, selfId, moveShapeBackward, writers])
 
   const handleSendToBack = useCallback(() => {
@@ -199,12 +224,18 @@ export function useShapeOperations({
     const selectedShapes = validIds.map(id => stateById[id]).filter(Boolean)
     selectedShapes.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
     
-    // Sync to Firestore with new zIndex values
-    selectedShapes.forEach((shape, index) => {
-      if (writers.updateImmediate) {
-        writers.updateImmediate({ ...shape, zIndex: minZ - selectedShapes.length + index, selectedBy: shape.selectedBy } as any)
-      }
-    })
+    // Sync to Firestore with new zIndex values using batch write
+    const updatedShapes = selectedShapes.map((shape, index) => ({
+      ...shape,
+      zIndex: minZ - selectedShapes.length + index,
+      selectedBy: shape.selectedBy
+    } as any))
+    
+    if (updatedShapes.length > 1 && writers.batchUpdate) {
+      writers.batchUpdate(updatedShapes)
+    } else if (updatedShapes.length === 1 && writers.updateImmediate) {
+      writers.updateImmediate(updatedShapes[0])
+    }
   }, [selectedIds, stateById, stateAllIds, selfId, moveShapeToBack, writers])
 
   return {

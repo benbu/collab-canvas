@@ -3,11 +3,25 @@
 ## Overview
 
 The performance monitoring system has been integrated into the Collab Canvas app to help identify performance bottlenecks, particularly around:
-- **Firestore sync operations** (writes, reads, throttling)
-- **2D character physics and sync**
+- **Firestore sync operations** (writes, reads, throttling, batch operations)
+- **Unified presence sync** (cursor + character combined)
+- **2D character physics**
 - Shape editing and rendering
 - Auto-pan camera
 - General FPS tracking
+
+## Recent Optimizations
+
+### Batch Write Implementation
+- **Group Operations**: Multiple shape updates (drag, z-index, text edits) now use batch writes
+- **Benefit**: Reduces N writes to 1 batch write (up to 500 operations per batch)
+- **Impact**: Significantly reduces Firestore write operations during multi-shape operations
+
+### Unified Presence Sync
+- **Combined**: Cursor and character sync merged into single presence document
+- **Benefit**: ~50% reduction in presence-related writes (was 2 separate writes, now 1)
+- **Throttle**: 50ms (~20 FPS) balances character physics with network efficiency
+- **Idle Detection**: Skips writes when both cursor and character are idle
 
 ## How to Enable
 
@@ -38,13 +52,18 @@ The monitoring state persists in localStorage, so you only need to enable it onc
 
 #### 🔥 Firestore Operations
 - **Writes**: Time spent writing to Firestore
-  - Includes add, update, updateImmediate, remove operations
+  - Includes add, update, updateImmediate, batchUpdate, remove operations
+  - **Batch writes** now used for group operations (multiple shapes)
 - **Reads**: Time spent processing Firestore snapshots
 - **Throttled**: Count of operations that were throttled (prevented due to rate limiting)
 
-#### 🎮 Character
-- **Sync**: Time spent syncing character state to/from Firestore
-  - Writes are throttled to ~30 FPS
+#### 🎯 Presence Sync (Unified)
+- **Sync**: Time spent syncing combined cursor + character presence to/from Firestore
+  - Writes are throttled to ~20 FPS (50ms)
+  - Includes idle detection to skip unnecessary writes
+  - **50% fewer writes** compared to previous separate cursor/character syncs
+
+#### 🎮 Character Physics
 - **Physics**: Time spent calculating physics updates
   - Includes collision detection with shapes
 
@@ -85,19 +104,26 @@ Click **"🗑️ Clear"** to reset all collected performance data and start fres
 ## What to Look For
 
 ### High Firestore Write Times
-- **Symptom**: Firestore Writes showing >50ms average
-- **Causes**: Network latency, too frequent updates, large payloads
+- **Symptom**: Firestore Writes showing >50ms average (individual writes) or >100ms (batch writes)
+- **Causes**: Network latency, too frequent updates, large payloads, large batches
 - **Solutions**: 
   - Increase throttle interval
   - Reduce data being synced
-  - Batch operations
+  - Use batch operations for group updates (already implemented)
+  - Split very large batches (>100 shapes) into smaller ones
 
 ### High Firestore Throttled Count
 - **Symptom**: Many operations being throttled
-- **Indicates**: Update frequency exceeds throttle interval (80ms for shapes, 33ms for character)
+- **Indicates**: Update frequency exceeds throttle interval (80ms for shapes, 50ms for presence)
 - **Solutions**:
   - Review update frequency
   - Consider debouncing rapid changes
+  - Verify idle detection is working for presence sync
+
+### Batch Write Efficiency
+- **Look for**: `batchUpdate-N-shapes` markers in performance data
+- **Optimal**: Multiple shape operations should use single batch write
+- **Check**: Group drag, text edits, z-index operations should show batch writes when >1 shape selected
 
 ### Low FPS with High Character Physics Time
 - **Symptom**: Physics operations taking >10ms
@@ -148,12 +174,15 @@ The performance markers use the standard Performance API, so you can:
 1. Open Chrome DevTools > Performance tab
 2. Record a session
 3. Look for User Timing markers like:
-   - `fs-update-*` (Firestore writes)
+   - `fs-update-*` (Firestore individual writes)
+   - `fs-batch-update-*` (Firestore batch writes)
    - `fs-snapshot` (Firestore reads)
    - `char-physics` (Character physics)
-   - `char-sync-write` (Character sync)
+   - `presence-sync-write` (Unified presence sync writes)
+   - `presence-sync-snapshot` (Unified presence sync reads)
    - `upsert-handler` (Shape edits)
    - `auto-pan` (Camera panning)
+   - `viewport-culling` (Shape visibility optimization)
 
 ## Troubleshooting
 
@@ -171,14 +200,22 @@ The performance markers use the standard Performance API, so you can:
 
 ## Performance Targets
 
-Based on the plan success criteria:
+Based on the plan success criteria and recent optimizations:
 
 - **Target FPS**: 60 FPS (≥55 is acceptable)
-- **Firestore Write**: <20ms average
+- **Firestore Individual Write**: <20ms average
+- **Firestore Batch Write**: <50ms average (for batches <10 shapes), <100ms (for larger batches)
 - **Firestore Read**: <10ms average
+- **Presence Sync Write**: <30ms average (unified cursor + character)
 - **Character Physics**: <5ms average (with <100 shapes)
 - **Shape Edit**: <2ms average
 - **Auto-pan**: <1ms average
+
+### Expected Write Reduction
+With the batch write and unified presence optimizations:
+- **Presence writes**: Reduced by ~50% (2 separate writes → 1 combined write)
+- **Group operations**: Reduced by ~95% for multi-shape operations (N individual writes → 1 batch write)
+- **Example**: Dragging 10 shapes previously required 10 writes, now requires only 1 batch write
 
 ## Next Steps
 

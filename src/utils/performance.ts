@@ -7,6 +7,7 @@ export type PerformanceCategory =
   | 'firestore-write'
   | 'firestore-read'
   | 'firestore-throttled'
+  | 'presence-sync'
   | 'character-sync'
   | 'character-physics'
   | 'shape-edit'
@@ -176,6 +177,7 @@ class PerformanceMonitor {
       'firestore-write',
       'firestore-read',
       'firestore-throttled',
+      'presence-sync',
       'character-sync',
       'character-physics',
       'shape-edit',

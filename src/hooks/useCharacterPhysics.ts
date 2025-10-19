@@ -9,7 +9,6 @@ const RUN_SPEED = 200 // pixels/s
 const ACCELERATION = 1200 // pixels/s²
 const AIR_CONTROL = 0.3 // movement control while airborne
 const FRICTION = 800 // pixels/s²
-const GROUND_THRESHOLD = 5 // pixels
 
 // Character dimensions
 export const CHARACTER_WIDTH = 20
@@ -24,40 +23,46 @@ interface CollisionResult {
 function checkCollisionWithRect(
   char: Character,
   shape: Shape,
+  deltaTime: number,
 ): CollisionResult {
   const charBottom = char.y + CHARACTER_HEIGHT
-  const charLeft = char.x
-  const charRight = char.x + CHARACTER_WIDTH
-
-  const rectWidth = shape.width ?? 0
+  const newCharBottom = charBottom + char.vy * deltaTime
   
-  // For rotated rects, use simple AABB collision (good enough for MVP)
+  // Check horizontal overlap (using projected position)
+  const charLeft = char.x + char.vx * deltaTime
+  const charRight = charLeft + CHARACTER_WIDTH
   const rectLeft = shape.x
-  const rectRight = shape.x + rectWidth
-  const rectTop = shape.y
-
-  // Check horizontal overlap
-  const horizontalOverlap = charRight > rectLeft && charLeft < rectRight
-
-  if (!horizontalOverlap) {
+  const rectRight = shape.x + (shape.width ?? 0)
+  
+  if (charRight <= rectLeft || charLeft >= rectRight) {
     return { onGround: false }
   }
-
-  // Check if character is standing on top of rect
-  const distanceToTop = Math.abs(charBottom - rectTop)
-  if (distanceToTop <= GROUND_THRESHOLD && char.vy >= 0) {
+  
+  // Check if character is/will be colliding with top surface
+  const rectTop = shape.y
+  const rectBottom = shape.y + (shape.height ?? 0)
+  
+  // If moving down and would cross through the top surface
+  if (char.vy > 0 && charBottom <= rectTop && newCharBottom >= rectTop) {
     return { onGround: true, groundY: rectTop - CHARACTER_HEIGHT }
   }
-
+  
+  // If already inside/overlapping (penetration resolution)
+  if (charBottom > rectTop && char.y < rectBottom) {
+    return { onGround: true, groundY: rectTop - CHARACTER_HEIGHT }
+  }
+  
   return { onGround: false }
 }
 
 function checkCollisionWithCircle(
   char: Character,
   shape: Shape,
+  deltaTime: number,
 ): CollisionResult {
   const charBottom = char.y + CHARACTER_HEIGHT
-  const charCenterX = char.x + CHARACTER_WIDTH / 2
+  const newCharBottom = charBottom + char.vy * deltaTime
+  const charCenterX = char.x + CHARACTER_WIDTH / 2 + char.vx * deltaTime
 
   const circleX = shape.x
   const circleY = shape.y
@@ -73,8 +78,13 @@ function checkCollisionWithCircle(
     const angleFromCenter = Math.acos(Math.min(1, distFromCenter / radius))
     const topY = circleY - radius * Math.sin(angleFromCenter)
 
-    const distanceToTop = Math.abs(charBottom - topY)
-    if (distanceToTop <= GROUND_THRESHOLD && char.vy >= 0) {
+    // If moving down and would cross through the top surface
+    if (char.vy > 0 && charBottom <= topY && newCharBottom >= topY) {
+      return { onGround: true, groundY: topY - CHARACTER_HEIGHT }
+    }
+
+    // If already inside/overlapping (penetration resolution)
+    if (charBottom > topY && char.y < circleY) {
       return { onGround: true, groundY: topY - CHARACTER_HEIGHT }
     }
   }
@@ -85,11 +95,13 @@ function checkCollisionWithCircle(
 function checkCollisionWithText(
   char: Character,
   shape: Shape,
+  deltaTime: number,
 ): CollisionResult {
   // Approximate text as a simple rect
   const charBottom = char.y + CHARACTER_HEIGHT
-  const charLeft = char.x
-  const charRight = char.x + CHARACTER_WIDTH
+  const newCharBottom = charBottom + char.vy * deltaTime
+  const charLeft = char.x + char.vx * deltaTime
+  const charRight = charLeft + CHARACTER_WIDTH
 
   const fontSize = shape.fontSize ?? 18
   const approxCharWidth = Math.max(5, Math.round(fontSize * 0.6))
@@ -99,6 +111,7 @@ function checkCollisionWithText(
   const textLeft = shape.x
   const textRight = shape.x + textWidth
   const textTop = shape.y - textHeight
+  const textBottom = shape.y
 
   // Check horizontal overlap
   const horizontalOverlap = charRight > textLeft && charLeft < textRight
@@ -107,9 +120,13 @@ function checkCollisionWithText(
     return { onGround: false }
   }
 
-  // Check if character is standing on top of text
-  const distanceToTop = Math.abs(charBottom - textTop)
-  if (distanceToTop <= GROUND_THRESHOLD && char.vy >= 0) {
+  // If moving down and would cross through the top surface
+  if (char.vy > 0 && charBottom <= textTop && newCharBottom >= textTop) {
+    return { onGround: true, groundY: textTop - CHARACTER_HEIGHT }
+  }
+
+  // If already inside/overlapping (penetration resolution)
+  if (charBottom > textTop && char.y < textBottom) {
     return { onGround: true, groundY: textTop - CHARACTER_HEIGHT }
   }
 
@@ -172,22 +189,18 @@ export function updateCharacterPhysics(
     char.onGround = false
   }
 
-  // Update position
-  char.x += char.vx * deltaTime
-  char.y += char.vy * deltaTime
-
-  // Check collisions with all shapes
+  // Check collisions with all shapes BEFORE updating position
   markStart('char-physics-collision')
   let collision: CollisionResult = { onGround: false }
   for (const shape of shapes) {
     let result: CollisionResult = { onGround: false }
 
     if (shape.type === 'rect') {
-      result = checkCollisionWithRect(char, shape)
+      result = checkCollisionWithRect(char, shape, deltaTime)
     } else if (shape.type === 'circle') {
-      result = checkCollisionWithCircle(char, shape)
+      result = checkCollisionWithCircle(char, shape, deltaTime)
     } else if (shape.type === 'text') {
-      result = checkCollisionWithText(char, shape)
+      result = checkCollisionWithText(char, shape, deltaTime)
     }
 
     if (result.onGround && result.groundY !== undefined) {
@@ -199,14 +212,20 @@ export function updateCharacterPhysics(
   }
   markEnd('char-physics-collision', 'character-physics', `collision-${shapes.length}-shapes`)
 
-  // Apply collision result
+  // Apply collision result and update position
   if (collision.onGround && collision.groundY !== undefined) {
+    // Stop at surface instead of passing through
     char.y = collision.groundY
     char.vy = 0
     char.onGround = true
   } else {
+    // No collision, apply movement
+    char.y += char.vy * deltaTime
     char.onGround = false
   }
+
+  // Update horizontal position
+  char.x += char.vx * deltaTime
 
   // Check if character fell off the bottom
   if (char.y > deathThreshold) {

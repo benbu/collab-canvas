@@ -24,6 +24,8 @@ interface ShapeRendererProps {
   onEndEdit: (id: string) => void
   onWriterUpdate: (shape: Shape) => void
   onWriterUpdateImmediate: (shape: Shape) => void
+  onWriterUpdateDebounced?: (shape: Shape, delayMs?: number) => void
+  onWriterCancelPending?: (id: string) => void
   onDragStart?: () => void
   onDragMove?: (newX: number, newY: number) => void
   onDragEnd?: (newX: number, newY: number) => void
@@ -49,6 +51,8 @@ const ShapeRenderer = memo(function ShapeRenderer({
   onEndEdit,
   onWriterUpdate,
   onWriterUpdateImmediate,
+  onWriterUpdateDebounced,
+  onWriterCancelPending,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -76,13 +80,14 @@ const ShapeRenderer = memo(function ShapeRenderer({
       onDragMove?.(newX, newY)
       // Always broadcast dragged shape position during drag for realtime sync
       onUpdateShape(id, { x: newX, y: newY })
-      onWriterUpdate({ ...s, x: newX, y: newY, selectedBy: stateById[id]?.selectedBy })
+      ;(onWriterUpdateDebounced ?? onWriterUpdate)({ ...s, x: newX, y: newY, selectedBy: stateById[id]?.selectedBy })
     },
     onDragEnd: (evt: DragEndEvent) => {
       const newX = evt.target.x?.() ?? s.x
       const newY = evt.target.y?.() ?? s.y
       const updated = { ...s, x: newX, y: newY }
       onUpdateShape(id, { x: newX, y: newY })
+      onWriterCancelPending && onWriterCancelPending(id)
       onWriterUpdateImmediate({ ...updated, selectedBy: stateById[id]?.selectedBy })
       onSetIsDraggingShape(false)
       onEndEdit(id)
@@ -134,7 +139,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
             const nextY = cY - h / 2
             onDragMove?.(nextX, nextY)
             onUpdateShape(id, { x: nextX, y: nextY })
-            onWriterUpdate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
+            ;(onWriterUpdateDebounced ?? onWriterUpdate)({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
           }}
           onDragEnd={(evt: DragEndEvent) => {
             const cX = evt.target.x?.() ?? cx
@@ -142,6 +147,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
             const nextX = cX - w / 2
             const nextY = cY - h / 2
             onUpdateShape(id, { x: nextX, y: nextY })
+            onWriterCancelPending && onWriterCancelPending(id)
             onWriterUpdateImmediate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
             onSetIsDraggingShape(false)
             onEndEdit(id)
@@ -157,11 +163,12 @@ const ShapeRenderer = memo(function ShapeRenderer({
           onChange={(next) => {
             onUpdateShape(id, next as any)
             const latest = { ...s, ...next, selectedBy: stateById[id]?.selectedBy }
-            onWriterUpdate(latest as any)
+            ;(onWriterUpdateDebounced ?? onWriterUpdate)(latest as any)
           }}
           onCommit={() => {
             const latest = stateById[id]
             if (latest) {
+              onWriterCancelPending && onWriterCancelPending(id)
               onWriterUpdateImmediate({ ...latest, selectedBy: stateById[id]?.selectedBy } as any)
             }
           }}
@@ -196,11 +203,12 @@ const ShapeRenderer = memo(function ShapeRenderer({
           onChange={(next) => {
             onUpdateShape(id, next as any)
             const latest = { ...s, ...next, selectedBy: stateById[id]?.selectedBy }
-            onWriterUpdate(latest as any)
+            ;(onWriterUpdateDebounced ?? onWriterUpdate)(latest as any)
           }}
           onCommit={() => {
             const latest = stateById[id]
             if (latest) {
+              onWriterCancelPending && onWriterCancelPending(id)
               onWriterUpdateImmediate({ ...latest, selectedBy: stateById[id]?.selectedBy } as any)
             }
           }}
@@ -249,7 +257,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
           const nextY = cY + th / 2
           onDragMove?.(nextX, nextY)
           onUpdateShape(id, { x: nextX, y: nextY })
-          onWriterUpdate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
+          ;(onWriterUpdateDebounced ?? onWriterUpdate)({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
         }}
         onDragEnd={(evt: DragEndEvent) => {
           const cX = evt.target.x?.() ?? tcx
@@ -257,6 +265,7 @@ const ShapeRenderer = memo(function ShapeRenderer({
           const nextX = cX - tw / 2
           const nextY = cY + th / 2
           onUpdateShape(id, { x: nextX, y: nextY })
+          onWriterCancelPending && onWriterCancelPending(id)
           onWriterUpdateImmediate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
           onSetIsDraggingShape(false)
           onEndEdit(id)
@@ -272,11 +281,12 @@ const ShapeRenderer = memo(function ShapeRenderer({
         onChange={(next) => {
           onUpdateShape(id, next as any)
           const latest = { ...s, ...next, selectedBy: stateById[id]?.selectedBy }
-          onWriterUpdate(latest as any)
+          ;(onWriterUpdateDebounced ?? onWriterUpdate)(latest as any)
         }}
         onCommit={() => {
           const latest = stateById[id]
           if (latest) {
+            onWriterCancelPending && onWriterCancelPending(id)
             onWriterUpdateImmediate({ ...latest, selectedBy: stateById[id]?.selectedBy } as any)
           }
         }}
