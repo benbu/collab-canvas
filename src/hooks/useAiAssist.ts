@@ -39,10 +39,19 @@ export function useAiAssist(options: UseAiAssistOptions) {
       // enforce prompt size limits (client-side)
       const MAX_PROMPT_CHARS = 4000
       const trimmedPrompt = String(prompt ?? '').slice(0, MAX_PROMPT_CHARS)
+      // Build compact selected-only context message
+      const selectedIds = Array.isArray((context as any)?.selectedIds) ? (context as any).selectedIds as string[] : []
+      const selectedSummary = selectedIds.length ? `Selected: ${selectedIds.join(', ')}` : 'Selected: (none)'
+      const messages = [
+        { role: 'system', content: 'You translate user instructions into tool calls to manipulate a collaborative canvas. Prefer using target:\'selected\' for selection-based edits. Use find_shapes to disambiguate when ids are unknown.' },
+        { role: 'user', content: selectedSummary },
+        { role: 'user', content: trimmedPrompt },
+      ]
+
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt: trimmedPrompt, tools, model: 'gpt-4o-mini', temperature: 0.2, context: { defaultFill, ...(context || {}) } }),
+        body: JSON.stringify({ messages, tools, model: 'gpt-4o-mini', temperature: 0.2, context: { defaultFill, ...(context || {}) } }),
       })
       if (!res.ok) throw new Error(`AI request failed: ${res.status}`)
       const data = await res.json()
@@ -62,7 +71,7 @@ export function useAiAssist(options: UseAiAssistOptions) {
         setLastResult({ executed: 0, planned, messages: deleteCount > 0 ? ['Destructive operation detected'] : undefined })
         return { ok: true, needsConfirmation: true, planned, deleteCount }
       }
-      const resExec = await executeToolCalls(toolCalls)
+      const resExec = await executeToolCalls(toolCalls, { selectedIds })
       setStatus(resExec.ok ? 'success' : 'error')
       return resExec
     } catch (e: any) {
@@ -80,7 +89,7 @@ export function useAiAssist(options: UseAiAssistOptions) {
     return result
   }, [pendingToolCalls])
 
-  const executeToolCalls = useCallback(async (toolCalls: any[]) => {
+  const executeToolCalls = useCallback(async (toolCalls: any[], execContext?: { selectedIds?: string[] }) => {
     let executed = 0
     try {
       for (const call of toolCalls) {
@@ -88,6 +97,12 @@ export function useAiAssist(options: UseAiAssistOptions) {
         const args = (call?.arguments ?? call?.function?.arguments) || {}
         logStep(name, args)
         switch (name) {
+          case 'find_shapes': {
+            // Executed only in multi-turn loops: here we would normally return results back to the model.
+            // Since current server API is single-response, we no-op on immediate execution path.
+            // The multi-turn will be introduced by posting messages including tool results in a future iteration.
+            break
+          }
           case 'create_rectangle': {
             const id = generateId()
             const x = clampNumber(numberOr(args.x, 0), -50000, 50000)
@@ -97,6 +112,54 @@ export function useAiAssist(options: UseAiAssistOptions) {
             const fill = validateColorOrDefault(args.fill, defaultFill ?? '#4F46E5')
             await writers.add({ id, type: 'rect', x, y, width, height, fill })
             executed++
+            break
+          }
+          case 'update_shapes': {
+            const idsInput: string[] | undefined = Array.isArray(args.ids) ? args.ids as string[] : undefined
+            const target: string | undefined = typeof args.target === 'string' ? (args.target as string) : undefined
+            const ids = idsInput ?? (target === 'selected' ? (execContext?.selectedIds ?? []) : [])
+            const patch = (args.patch ?? {}) as Partial<Shape>
+            for (const id of ids) {
+              const base = getState().byId[id]
+              if (!base) continue
+              const next: Shape = { ...base }
+              if (isNumber((patch as any).x)) next.x = clampNumber((patch as any).x, -50000, 50000)
+              if (isNumber((patch as any).y)) next.y = clampNumber((patch as any).y, -50000, 50000)
+              if (isNumber((patch as any).width)) next.width = clampNumber((patch as any).width, 1, 10000)
+              if (isNumber((patch as any).height)) next.height = clampNumber((patch as any).height, 1, 10000)
+              if (isNumber((patch as any).radius)) next.radius = clampNumber((patch as any).radius, 1, 2000)
+              if (isString((patch as any).fill)) next.fill = validateColorOrDefault((patch as any).fill, next.fill ?? (defaultFill ?? '#4F46E5'))
+              if (isString((patch as any).text)) next.text = clampStringLength(sanitizeText((patch as any).text), 500)
+              if (isNumber((patch as any).fontSize)) next.fontSize = clampNumber(positiveNumberOr((patch as any).fontSize, next.fontSize ?? 18), 8, 200)
+              if (isNumber((patch as any).rotation)) next.rotation = clampNumber((patch as any).rotation, -360, 360)
+              await writers.update(next)
+              executed++
+            }
+            break
+          }
+          case 'delete_shapes': {
+            const idsInput: string[] | undefined = Array.isArray(args.ids) ? args.ids as string[] : undefined
+            const target: string | undefined = typeof args.target === 'string' ? (args.target as string) : undefined
+            const ids = idsInput ?? (target === 'selected' ? (execContext?.selectedIds ?? []) : [])
+            for (const id of ids) {
+              await writers.remove(id)
+              executed++
+            }
+            break
+          }
+          case 'duplicate_shapes': {
+            const idsInput: string[] | undefined = Array.isArray(args.ids) ? args.ids as string[] : undefined
+            const target: string | undefined = typeof args.target === 'string' ? (args.target as string) : undefined
+            const ids = idsInput ?? (target === 'selected' ? (execContext?.selectedIds ?? []) : [])
+            const dx = numberOr(args.dx, 20)
+            const dy = numberOr(args.dy, 20)
+            for (const id of ids) {
+              const base = getState().byId[id]
+              if (!base) continue
+              const newId = generateId()
+              await writers.add({ ...base, id: newId, x: base.x + dx, y: base.y + dy })
+              executed++
+            }
             break
           }
           case 'create_circle': {
