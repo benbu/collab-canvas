@@ -9,6 +9,8 @@ type Props = {
   onCommit?: () => void
   onBeginEdit?: () => void
   onEndEdit?: () => void
+  onHandleMouseEnter?: (handleId: string) => void
+  onHandleMouseLeave?: () => void
   selectionColor?: string
   interactive?: boolean
   scale?: number
@@ -40,7 +42,7 @@ function getBounds(shape: Shape): Bounds {
   return { x: shape.x, y: shape.y - h, w, h }
 }
 
-export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onBeginEdit, onEndEdit, selectionColor, interactive = true, scale = 1, position = { x: 0, y: 0 } }: Props) {
+export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onBeginEdit, onEndEdit, onHandleMouseEnter, onHandleMouseLeave, selectionColor, interactive = true, scale = 1, position = { x: 0, y: 0 } }: Props) {
   const bounds = useMemo(() => getBounds(shape), [shape])
   const startRef = useRef<StartState | null>(null)
   const groupRef = useRef<any>(null)
@@ -191,19 +193,19 @@ export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onB
       {/* corner handles */}
       {/* NW corner */}
       <Rect ref={nwGhostRef} x={-half} y={-half} width={handleSize} height={handleSize} fill={selColor} listening={false} visible={false} />
-      <Rect ref={nwHandleRef} x={-half} y={-half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: -half, y: -half })} onDragStart={() => onCornerStart('nw')} onDragMove={() => onCornerDrag('nw')} onDragEnd={() => onCornerEnd('nw')} />
+      <Rect ref={nwHandleRef} x={-half} y={-half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: -half, y: -half })} onDragStart={() => onCornerStart('nw')} onDragMove={() => onCornerDrag('nw')} onDragEnd={() => onCornerEnd('nw')} onMouseEnter={() => onHandleMouseEnter?.('resize-nw')} onMouseLeave={() => onHandleMouseLeave?.()} />
       
       {/* NE corner */}
       <Rect ref={neGhostRef} x={w - half} y={-half} width={handleSize} height={handleSize} fill={selColor} listening={false} visible={false} />
-      <Rect ref={neHandleRef} x={w - half} y={-half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: w - half, y: -half })} onDragStart={() => onCornerStart('ne')} onDragMove={() => onCornerDrag('ne')} onDragEnd={() => onCornerEnd('ne')} />
+      <Rect ref={neHandleRef} x={w - half} y={-half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: w - half, y: -half })} onDragStart={() => onCornerStart('ne')} onDragMove={() => onCornerDrag('ne')} onDragEnd={() => onCornerEnd('ne')} onMouseEnter={() => onHandleMouseEnter?.('resize-ne')} onMouseLeave={() => onHandleMouseLeave?.()} />
       
       {/* SW corner */}
       <Rect ref={swGhostRef} x={-half} y={h - half} width={handleSize} height={handleSize} fill={selColor} listening={false} visible={false} />
-      <Rect ref={swHandleRef} x={-half} y={h - half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: -half, y: h - half })} onDragStart={() => onCornerStart('sw')} onDragMove={() => onCornerDrag('sw')} onDragEnd={() => onCornerEnd('sw')} />
+      <Rect ref={swHandleRef} x={-half} y={h - half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: -half, y: h - half })} onDragStart={() => onCornerStart('sw')} onDragMove={() => onCornerDrag('sw')} onDragEnd={() => onCornerEnd('sw')} onMouseEnter={() => onHandleMouseEnter?.('resize-sw')} onMouseLeave={() => onHandleMouseLeave?.()} />
       
       {/* SE corner */}
       <Rect ref={seGhostRef} x={w - half} y={h - half} width={handleSize} height={handleSize} fill={selColor} listening={false} visible={false} />
-      <Rect ref={seHandleRef} x={w - half} y={h - half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: w - half, y: h - half })} onDragStart={() => onCornerStart('se')} onDragMove={() => onCornerDrag('se')} onDragEnd={() => onCornerEnd('se')} />
+      <Rect ref={seHandleRef} x={w - half} y={h - half} width={handleSize} height={handleSize} fill={selColor} draggable={interactive} dragBoundFunc={() => ({ x: w - half, y: h - half })} onDragStart={() => onCornerStart('se')} onDragMove={() => onCornerDrag('se')} onDragEnd={() => onCornerEnd('se')} onMouseEnter={() => onHandleMouseEnter?.('resize-se')} onMouseLeave={() => onHandleMouseLeave?.()} />
 
       {/* rotation handle (rect/text only) */}
       {shape.type !== 'circle' && (
@@ -227,6 +229,8 @@ export default function ShapeEditor({ shape, isSelected, onChange, onCommit, onB
             fill={selColor}
             draggable={interactive}
             dragBoundFunc={() => ({ x: w / 2, y: -h / 2 - 24 })}
+            onMouseEnter={() => onHandleMouseEnter?.('rotate')}
+            onMouseLeave={() => onHandleMouseLeave?.()}
             onDragMove={() => {
               const grp = groupRef.current
               const stage = grp?.getStage()

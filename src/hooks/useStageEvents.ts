@@ -123,18 +123,21 @@ export function useStageEvents({
       const shape = { id, type: 'rect' as const, x: canvasPoint.x, y: canvasPoint.y, width: 200, height: 120, fill: color, zIndex: maxZ + 1 }
       addShape(shape)
       writers.add && writers.add({ ...shape })
+      setSelectedIds([id])
     } else if (tool === 'circle') {
       const id = generateId()
       const maxZ = Math.max(...stateAllIds.map(id => stateById[id]?.zIndex ?? 0), 0)
       const shape = { id, type: 'circle' as const, x: canvasPoint.x, y: canvasPoint.y, radius: 60, fill: color, zIndex: maxZ + 1 }
       addShape(shape)
       writers.add && writers.add({ ...shape })
+      setSelectedIds([id])
     } else if (tool === 'text') {
       const id = generateId()
       const maxZ = Math.max(...stateAllIds.map(id => stateById[id]?.zIndex ?? 0), 0)
-      const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 18, fill: color, fontFamily, zIndex: maxZ + 1 }
+      const shape = { id, type: 'text' as const, x: canvasPoint.x, y: canvasPoint.y, text: textInput, fontSize: 54, fill: color, fontFamily, zIndex: maxZ + 1 }
       addShape(shape)
       writers.add && writers.add({ ...shape })
+      setSelectedIds([id])
     } else if (tool === 'character') {
       // Only place character if user doesn't already have a living character
       if (!localCharacter || localCharacter.state === 'dead') {
