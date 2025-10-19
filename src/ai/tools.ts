@@ -121,6 +121,82 @@ export const aiTools: AiTool[] = [
       },
     },
   },
+  // New: search and batch operations for selection-friendly manipulation
+  {
+    type: 'function',
+    function: {
+      name: 'find_shapes',
+      description: 'Search existing shapes by simple criteria to disambiguate references',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', description: 'rect | circle | text' },
+          textContains: { type: 'string' },
+          fill: { type: 'string' },
+          limit: numberProp,
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_shapes',
+      description: 'Batch update shapes by ids or selection target',
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: "'selected' to operate on the current selection" },
+          ids: { type: 'array', items: stringProp },
+          patch: {
+            type: 'object',
+            properties: {
+              x: numberProp,
+              y: numberProp,
+              width: numberProp,
+              height: numberProp,
+              radius: numberProp,
+              fill: { type: 'string' },
+              text: { type: 'string' },
+              fontSize: numberProp,
+              rotation: numberProp,
+            },
+          },
+        },
+        required: ['patch'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_shapes',
+      description: 'Batch delete shapes by ids or selection target',
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: "'selected' to operate on the current selection" },
+          ids: { type: 'array', items: stringProp },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'duplicate_shapes',
+      description: 'Batch duplicate shapes by ids or selection target',
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: "'selected' to operate on the current selection" },
+          ids: { type: 'array', items: stringProp },
+          dx: numberProp,
+          dy: numberProp,
+        },
+      },
+    },
+  },
 ]
 
 export default aiTools
