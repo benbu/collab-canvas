@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { db, isFirebaseEnabled } from '../services/firebase'
-import { collection, doc, onSnapshot, serverTimestamp, setDoc, deleteDoc, type Unsubscribe } from 'firebase/firestore'
+import { rtdb as database, isFirebaseEnabled } from '../services/firebase'
+import { ref, onChildAdded, onChildChanged, onChildRemoved, serverTimestamp, update, onDisconnect } from 'firebase/database'
 import type { Character } from './useCharacterState'
 import { markStart, markEnd, incrementCounter } from '../utils/performance'
+import { logger } from '../utils/logger'
 
 export type RemoteCursor = { id: string; x: number; y: number; color: string; name?: string; updatedAt: number }
 
@@ -39,7 +40,7 @@ export function usePresenceSync(
   const lastWrite = useRef(0)
   const lastWrittenCursor = useRef<{ x: number; y: number } | null>(null)
   const lastWrittenCharacter = useRef<{ x: number; y: number } | null>(null)
-  const unsubRef = useRef<Unsubscribe | null>(null)
+  const unsubRef = useRef<(() => void) | null>(null)
   const localCharacterRef = useRef<Character | null>(localCharacter)
   const selfNameRef = useRef(selfName)
   const selfColorRef = useRef(selfColor)
@@ -65,63 +66,79 @@ export function usePresenceSync(
 
   // Subscribe to presence collection
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) {
-      console.log('[PresenceSync] Firebase not enabled')
+    if (!isFirebaseEnabled || !database) {
+      logger.debug('[PresenceSync] Firebase not enabled')
       return
     }
 
-    console.log('[PresenceSync] Subscribing to presence in room:', roomId)
-    const colRef = collection(db, 'rooms', roomId, 'presence')
-    const unsub = onSnapshot(colRef, (snap) => {
-      markStart('presence-sync-snapshot')
-      console.log('[PresenceSync] Received snapshot, size:', snap.size)
-      const next: Record<string, RemotePresence> = {}
-      snap.forEach((docSnap) => {
-        // Skip own presence to avoid flickering from Firestore echoing our writes
-        if (docSnap.id === selfId) {
-          console.log('[PresenceSync] Skipping own presence:', docSnap.id)
-          return
-        }
-        
-        const d = docSnap.data() as any
-        next[docSnap.id] = {
-          id: docSnap.id,
-          cursor: d.cursor,
-          character: d.character ? {
-            userId: docSnap.id,
-            x: d.character.x ?? 0,
-            y: d.character.y ?? 0,
-            vx: d.character.vx ?? 0,
-            vy: d.character.vy ?? 0,
-            onGround: d.character.onGround ?? false,
-            color: d.character.color ?? d.color ?? '#888',
-            name: d.character.name ?? d.name,
-            state: d.character.state ?? 'alive',
-            deathTimer: d.character.deathTimer,
-          } : undefined,
-          color: d.color ?? '#888',
-          name: d.name,
-          updatedAt: d.updatedAt?.toMillis?.() ?? nowMs(),
-        }
-      })
-      console.log('[PresenceSync] Setting presence (excluding self):', next)
-      setPresence(next)
-      markEnd('presence-sync-snapshot', 'presence-sync', `read-${snap.size}-presence`)
+    logger.debug('[PresenceSync] Subscribing to presence in room:', roomId)
+    const listRef = ref(database!, `rooms/${roomId}/presence`)
+    const next: Record<string, RemotePresence> = {}
+    const unsubAdd = onChildAdded(listRef, (s) => {
+      const d = s.val() as any
+      if (s.key === selfId) return
+      next[s.key as string] = {
+        id: s.key as string,
+        cursor: d.cursor,
+        character: d.character ? {
+          userId: s.key as string,
+          x: d.character.x ?? 0,
+          y: d.character.y ?? 0,
+          vx: d.character.vx ?? 0,
+          vy: d.character.vy ?? 0,
+          onGround: d.character.onGround ?? false,
+          color: d.character.color ?? d.color ?? '#888',
+          name: d.character.name ?? d.name,
+          state: d.character.state ?? 'alive',
+          deathTimer: d.character.deathTimer,
+        } : undefined,
+        color: d.color ?? '#888',
+        name: d.name,
+        updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : nowMs(),
+      }
+      setPresence({ ...next })
+    })
+    const unsubChange = onChildChanged(listRef, (s) => {
+      const d = s.val() as any
+      if (s.key === selfId) return
+      next[s.key as string] = {
+        id: s.key as string,
+        cursor: d.cursor,
+        character: d.character ? {
+          userId: s.key as string,
+          x: d.character.x ?? 0,
+          y: d.character.y ?? 0,
+          vx: d.character.vx ?? 0,
+          vy: d.character.vy ?? 0,
+          onGround: d.character.onGround ?? false,
+          color: d.character.color ?? d.color ?? '#888',
+          name: d.character.name ?? d.name,
+          state: d.character.state ?? 'alive',
+          deathTimer: d.character.deathTimer,
+        } : undefined,
+        color: d.color ?? '#888',
+        name: d.name,
+        updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : nowMs(),
+      }
+      setPresence({ ...next })
+    })
+    const unsubRemove = onChildRemoved(listRef, (s) => {
+      delete next[s.key as string]
+      setPresence({ ...next })
     })
 
-    unsubRef.current = unsub
+    unsubRef.current = () => { unsubAdd(); unsubChange(); unsubRemove() }
     return () => {
-      unsub()
+      unsubAdd(); unsubChange(); unsubRemove()
       unsubRef.current = null
     }
   }, [roomId])
 
-  // Sync local presence (cursor + character) to Firestore
+  // Sync local presence (cursor + character) to RTDB
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
+    if (!isFirebaseEnabled || !database) return
 
-    const database = db!
-    const presenceRef = doc(database, 'rooms', roomId, 'presence', selfId)
+    const presenceRef = ref(database!, `rooms/${roomId}/presence/${selfId}`)
 
     const writePresence = async () => {
       const t = nowMs()
@@ -167,7 +184,7 @@ export function usePresenceSync(
 
       lastWrite.current = t
 
-      markStart('presence-sync-write')
+      const marker = markStart('presence-sync-write')
       
       // Build presence data
       const data: PresenceData = {
@@ -207,9 +224,9 @@ export function usePresenceSync(
         lastWrittenCharacter.current = { x: currentCharacter.x, y: currentCharacter.y }
       }
 
-      await setDoc(presenceRef, data, { merge: true })
+      await update(presenceRef, data as any)
       
-      markEnd('presence-sync-write', 'presence-sync', 'write')
+      markEnd(marker, 'presence-sync', 'write')
     }
 
     // Setup mousemove listener for cursor tracking
@@ -227,16 +244,15 @@ export function usePresenceSync(
     }, 50) // ~20 FPS
 
     // Cleanup on unmount
-    const onUnload = () => {
-      void deleteDoc(presenceRef)
-    }
+    const onUnload = () => { /* rely on onDisconnect */ }
     window.addEventListener('beforeunload', onUnload)
+    try { onDisconnect(presenceRef).remove() } catch {}
 
     return () => {
       window.clearInterval(intervalId)
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('beforeunload', onUnload)
-      void deleteDoc(presenceRef)
+      try { onDisconnect(presenceRef).cancel() } catch {}
     }
   }, [roomId, selfId]) // Using refs for all frequently-changing props to avoid effect churn
 
@@ -268,11 +284,11 @@ export function usePresenceSync(
       if (id === selfId) continue
       const p = presence[id]
       if (p.character) {
-        console.log('[PresenceSync] Adding remote character:', id)
+        logger.debug('[PresenceSync] Adding remote character:', id)
         out.push(p.character)
       }
     }
-    console.log('[PresenceSync] visibleCharacters:', out)
+    logger.debug('[PresenceSync] visibleCharacters:', out)
     return out
   }, [presence, selfId])
 

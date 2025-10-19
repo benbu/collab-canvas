@@ -1,5 +1,6 @@
 import { Hand, MousePointer, Square, Circle as CircleIcon, Type as TypeIcon, Trash2, Download, LayoutGrid, ArrowUpToLine, ArrowDownToLine, ArrowUp, ArrowDown, User } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
+import { logger } from '../../utils/logger'
 
 export type Tool = 'pan' | 'select' | 'rect' | 'circle' | 'text' | 'character'
 
@@ -39,7 +40,7 @@ export default function Toolbar(props: {
         }
       }
     } catch (e) {
-      console.warn('Failed to load recent colors:', e)
+      logger.warn('Failed to load recent colors:', e)
     }
   }, [])
 
@@ -49,7 +50,7 @@ export default function Toolbar(props: {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(recentColors))
       } catch (e) {
-        console.warn('Failed to save recent colors:', e)
+        logger.warn('Failed to save recent colors:', e)
       }
     }
   }, [recentColors])

@@ -74,9 +74,9 @@ export default function DevTools({ onAddShape }: DevToolsProps) {
             </button>
             <button
               onClick={() => {
-                measureFpsFor(1000, (fps) => {
-                  // eslint-disable-next-line no-console
-                  console.log('FPS ~', Math.round(fps))
+                measureFpsFor(1000, () => {
+                  // FPS measurement result is not logged to console
+                  // It can be viewed in the performance monitor overlay
                 })
               }}
             >

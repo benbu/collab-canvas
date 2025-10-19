@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import aiTools, { type AiTool } from '../ai/tools'
 import type { Shape } from './useCanvasState'
 import { validateColorOrDefault } from '../utils/colors'
+import { logger } from '../utils/logger'
 
 export type AiAssistStatus = 'idle' | 'loading' | 'success' | 'error' | 'needs_confirmation'
 
@@ -47,7 +48,7 @@ export function useAiAssist(options: UseAiAssistOptions) {
       const data = await res.json()
       const rawToolCalls: any[] = Array.isArray(data?.tool_calls) ? data.tool_calls : []
       const toolCalls = normalizeToolCalls(rawToolCalls)
-      try { console.log('[AI Assist][normalized]', toolCalls) } catch {}
+      logger.debug('[AI Assist][normalized]', toolCalls)
       const planned = toolCalls.length
       const deleteCount = toolCalls.filter((c) => c?.name === 'delete_shape').length
       if (planned > 100) {
@@ -164,12 +165,12 @@ export function useAiAssist(options: UseAiAssistOptions) {
       }
       const res: AiAssistResult = { executed, planned: toolCalls.length }
       setLastResult(res)
-      try { console.log('[AI Assist][summary]', { planned: res.planned, executed: res.executed }) } catch {}
+      logger.info('[AI Assist][summary]', { planned: res.planned, executed: res.executed })
       return { ok: true, ...res }
     } catch (e: any) {
       const res: AiAssistResult = { executed, planned: toolCalls.length, messages: [e?.message || 'Execution error'] }
       setLastResult(res)
-      try { console.warn('[AI Assist][summary][error]', { planned: res.planned, executed: res.executed, error: e?.message }) } catch {}
+      logger.warn('[AI Assist][summary][error]', { planned: res.planned, executed: res.executed, error: e?.message })
       return { ok: false, ...res }
     }
   }, [writers, getState, generateId, defaultFill])
@@ -190,10 +191,7 @@ function stringOr(v: any, d: string): string { return isString(v) ? v : d }
 
 
 function logStep(name: string, args: Record<string, unknown>) {
-  try {
-    // eslint-disable-next-line no-console
-    console.log('[AI Assist]', name, args)
-  } catch {}
+  logger.debug('[AI Assist]', name, args)
 }
 
 function clampNumber(n: number, min: number, max: number): number {

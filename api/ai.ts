@@ -47,7 +47,6 @@ async function handleWeb(req: Request): Promise<Response> {
 
     const startedAt = Date.now()
     // basic request logging (no PII; timing + status)
-    // eslint-disable-next-line no-console
     console.log('[AI API] -> gateway request', { model, temperature })
 
     // Authorization strategy:
@@ -59,8 +58,7 @@ async function handleWeb(req: Request): Promise<Response> {
     if (gatewayToken) headers['authorization'] = `Bearer ${gatewayToken}`
     else if (openaiKey) headers['authorization'] = `Bearer ${openaiKey}`
     else {
-      // eslint-disable-next-line no-console
-      console.warn('[AI API] No Authorization configured. Configure provider key on the Gateway or set OPENAI_API_KEY.')
+      console.error('[AI API] No Authorization configured. Configure provider key on the Gateway or set OPENAI_API_KEY.')
     }
 
     const resp = await fetch(gatewayUrl, {
@@ -71,8 +69,7 @@ async function handleWeb(req: Request): Promise<Response> {
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => '')
-      // eslint-disable-next-line no-console
-      console.warn('[AI API] <- gateway error', { status: resp.status, durationMs: Date.now() - startedAt })
+      console.error('[AI API] <- gateway error', { status: resp.status, durationMs: Date.now() - startedAt })
       return new Response(JSON.stringify({ error: 'Upstream error', status: resp.status, body: text }), { status: 502, headers: { 'content-type': 'application/json' } })
     }
 
@@ -85,11 +82,9 @@ async function handleWeb(req: Request): Promise<Response> {
       data?.choices?.[0]?.delta?.tool_calls ||
       []
 
-    // eslint-disable-next-line no-console
     console.log('[AI API] <- gateway success', { toolCalls: Array.isArray(toolCalls) ? toolCalls.length : 0, durationMs: Date.now() - startedAt })
     return new Response(JSON.stringify({ tool_calls: toolCalls }), { status: 200, headers: { 'content-type': 'application/json' } })
   } catch (e: any) {
-    // eslint-disable-next-line no-console
     console.error('[AI API] unexpected error', { message: e?.message || String(e) })
     return new Response(JSON.stringify({ error: 'Unexpected error', message: e?.message || String(e) }), { status: 500, headers: { 'content-type': 'application/json' } })
   }

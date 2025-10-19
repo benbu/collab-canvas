@@ -7,6 +7,9 @@ export type PerformanceCategory =
   | 'firestore-write'
   | 'firestore-read'
   | 'firestore-throttled'
+  | 'rtdb-write'
+  | 'rtdb-read'
+  | 'rtdb-throttled'
   | 'presence-sync'
   | 'character-sync'
   | 'character-physics'
@@ -52,10 +55,6 @@ class PerformanceMonitor {
     const storedEnabled = localStorage.getItem('perf-monitoring-enabled') === 'true'
     
     this.enabled = urlEnabled || storedEnabled
-    
-    if (this.enabled) {
-      console.log('[PerformanceMonitor] Enabled via', urlEnabled ? 'URL param' : 'localStorage')
-    }
   }
 
   isEnabled(): boolean {
@@ -71,9 +70,13 @@ class PerformanceMonitor {
     }
   }
 
-  markStart(label: string): void {
-    if (!this.enabled) return
-    this.markers.set(label, performance.now())
+  markStart(label: string): string {
+    if (!this.enabled) return label
+    
+    // Make label unique per invocation to handle concurrent async operations
+    const uniqueLabel = `${label}-${performance.now()}-${Math.random().toString(36).slice(2, 9)}`
+    this.markers.set(uniqueLabel, performance.now())
+    return uniqueLabel
   }
 
   markEnd(label: string, category: PerformanceCategory, operation?: string): number | null {
@@ -81,14 +84,14 @@ class PerformanceMonitor {
     
     const startTime = this.markers.get(label)
     if (startTime === undefined) {
-      console.warn(`[PerformanceMonitor] No start marker for "${label}"`)
+      // Silently skip if no marker found (common for concurrent operations)
       return null
     }
     
     const duration = performance.now() - startTime
     this.markers.delete(label)
     
-    this.logTiming(category, operation || label, duration)
+    this.logTiming(category, operation || label.split('-')[0], duration)
     return duration
   }
 
@@ -224,7 +227,6 @@ class PerformanceMonitor {
     this.lastFpsTime = 0
     this.currentFps = 0
     this.operationCounts.clear()
-    console.log('[PerformanceMonitor] Cleared all data')
   }
 }
 
@@ -232,8 +234,8 @@ class PerformanceMonitor {
 export const perfMonitor = new PerformanceMonitor()
 
 // Convenience functions
-export const markStart = (label: string) => perfMonitor.markStart(label)
-export const markEnd = (label: string, category: PerformanceCategory, operation?: string) => 
+export const markStart = (label: string): string => perfMonitor.markStart(label)
+export const markEnd = (label: string, category: PerformanceCategory, operation?: string): number | null => 
   perfMonitor.markEnd(label, category, operation)
 export const logTiming = (category: PerformanceCategory, operation: string, duration: number) =>
   perfMonitor.logTiming(category, operation, duration)
