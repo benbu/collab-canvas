@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { rtdb as database, isFirebaseEnabled } from '../services/firebase'
-import { ref, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, serverTimestamp, set, update } from 'firebase/database'
+import { ref, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, serverTimestamp, update } from 'firebase/database'
 
 export type RemoteCursor = { id: string; x: number; y: number; color: string; name?: string; updatedAt: number }
 

@@ -55,7 +55,6 @@ const ShapeRenderer = memo(function ShapeRenderer({
   onEndEdit,
   onWriterUpdate,
   onWriterUpdateImmediate,
-  onWriterUpdateDebounced,
   onWriterCancelPending,
   onDragStart,
   onDragMove,

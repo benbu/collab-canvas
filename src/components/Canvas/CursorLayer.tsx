@@ -1,4 +1,4 @@
-import React, { memo } from 'react'
+import { memo } from 'react'
 import { Layer, Line, Text, Group } from 'react-konva'
 import type { RemoteCursor } from '../../hooks/usePresenceSync'
 
