@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { db, isFirebaseEnabled } from '../services/firebase'
 import { collection, doc, onSnapshot, serverTimestamp, setDoc, deleteDoc, type Unsubscribe } from 'firebase/firestore'
 import type { Character } from './useCharacterState'
+import { markStart, markEnd, incrementCounter } from '../utils/performance'
 
 function nowMs() {
   return Date.now()
@@ -14,16 +15,24 @@ export function useCharacterSync(
 ) {
   const [characters, setCharacters] = useState<Record<string, Character>>({})
   const lastWrite = useRef(0)
+  const lastWrittenPosition = useRef<{ x: number; y: number } | null>(null)
   const unsubRef = useRef<Unsubscribe | null>(null)
 
   // Subscribe to characters collection
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
+    if (!isFirebaseEnabled || !db) {
+      console.log('[CharacterSync] Firebase not enabled')
+      return
+    }
 
+    console.log('[CharacterSync] Subscribing to characters in room:', roomId)
     const colRef = collection(db, 'rooms', roomId, 'characters')
     const unsub = onSnapshot(colRef, (snap) => {
+      markStart('char-sync-snapshot')
+      console.log('[CharacterSync] Received snapshot, size:', snap.size)
       const next: Record<string, Character> = {}
       snap.forEach((docSnap) => {
+        console.log('[CharacterSync] Character doc:', docSnap.id, docSnap.data())
         const d = docSnap.data() as any
         next[docSnap.id] = {
           userId: docSnap.id,
@@ -38,7 +47,9 @@ export function useCharacterSync(
           deathTimer: d.deathTimer,
         }
       })
+      console.log('[CharacterSync] Setting characters:', next)
       setCharacters(next)
+      markEnd('char-sync-snapshot', 'character-sync', `read-${snap.size}-characters`)
     })
 
     unsubRef.current = unsub
@@ -72,25 +83,53 @@ export function useCharacterSync(
 
     const writeCharacter = async () => {
       const t = nowMs()
-      if (t - lastWrite.current < 33) return // ~30 FPS
+      if (t - lastWrite.current < 50) {
+        incrementCounter('character-sync', 'write-throttled')
+        return // ~20 FPS (reduced from 30 FPS for better network performance)
+      }
+
+      // Check if character has moved since last write (with small threshold for floating point)
+      const positionThreshold = 0.1 // pixels
+      if (lastWrittenPosition.current) {
+        const dx = Math.abs(localCharacter.x - lastWrittenPosition.current.x)
+        const dy = Math.abs(localCharacter.y - lastWrittenPosition.current.y)
+        
+        if (dx < positionThreshold && dy < positionThreshold) {
+          // Character hasn't moved, skip write
+          incrementCounter('character-sync', 'write-skipped-idle')
+          return
+        }
+      }
+
       lastWrite.current = t
 
-      await setDoc(
-        charRef,
-        {
-          x: localCharacter.x,
-          y: localCharacter.y,
-          vx: localCharacter.vx,
-          vy: localCharacter.vy,
-          onGround: localCharacter.onGround,
-          color: localCharacter.color,
-          name: localCharacter.name,
-          state: localCharacter.state,
-          deathTimer: localCharacter.deathTimer,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      )
+      markStart('char-sync-write')
+      // Remove undefined values for Firebase (Firebase doesn't accept undefined)
+      const data: any = {
+        x: localCharacter.x,
+        y: localCharacter.y,
+        vx: localCharacter.vx,
+        vy: localCharacter.vy,
+        onGround: localCharacter.onGround,
+        color: localCharacter.color,
+        state: localCharacter.state,
+        updatedAt: serverTimestamp(),
+      }
+
+      // Only include optional fields if they're defined
+      if (localCharacter.name !== undefined) {
+        data.name = localCharacter.name
+      }
+      if (localCharacter.deathTimer !== undefined) {
+        data.deathTimer = localCharacter.deathTimer
+      }
+
+      await setDoc(charRef, data, { merge: true })
+      
+      // Update last written position
+      lastWrittenPosition.current = { x: localCharacter.x, y: localCharacter.y }
+      
+      markEnd('char-sync-write', 'character-sync', 'write')
     }
 
     // Write immediately
@@ -99,7 +138,7 @@ export function useCharacterSync(
     // Setup interval for periodic updates
     const intervalId = window.setInterval(() => {
       void writeCharacter()
-    }, 33) // ~30 FPS
+    }, 50) // ~20 FPS (reduced for better network performance)
 
     // Cleanup on unmount
     const onUnload = () => {
@@ -118,9 +157,14 @@ export function useCharacterSync(
     // Return all characters except self (we render local character separately)
     const out: Character[] = []
     for (const id in characters) {
-      if (id === selfId) continue
+      if (id === selfId) {
+        console.log('[CharacterSync] Skipping self character:', id)
+        continue
+      }
+      console.log('[CharacterSync] Adding remote character:', id)
       out.push(characters[id])
     }
+    console.log('[CharacterSync] visibleCharacters:', out)
     return out
   }, [characters, selfId])
 

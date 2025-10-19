@@ -10,6 +10,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import type { Shape } from './useCanvasState'
+import { markStart, markEnd, incrementCounter } from '../utils/performance'
 
 type Writer = {
   add: (shape: Shape) => Promise<void>
@@ -37,6 +38,7 @@ export function useFirestoreSync(
       const database = db!
       const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
       {
+        markStart(`fs-add-${shape.id}`)
         const payload: Record<string, unknown> = {
           type: shape.type,
           x: shape.x,
@@ -54,6 +56,7 @@ export function useFirestoreSync(
         }
         if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
         await setDoc(ref, payload, { merge: true })
+        markEnd(`fs-add-${shape.id}`, 'firestore-write', 'add')
       }
     },
     update: async (shape: Shape) => {
@@ -66,8 +69,12 @@ export function useFirestoreSync(
       const interval = 80
       const remaining = interval - (now - last)
 
-      if (remaining > 0) return
+      if (remaining > 0) {
+        incrementCounter('firestore-throttled', 'update')
+        return
+      }
 
+      markStart(`fs-update-${shape.id}`)
       const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
       const payload: Record<string, unknown> = {
         type: shape.type,
@@ -88,10 +95,12 @@ export function useFirestoreSync(
       if (shape.selectedBy !== undefined) payload.selectedBy = shape.selectedBy
       await setDoc(ref, payload, { merge: true })
       lastWriteMs.current[key] = Date.now()
+      markEnd(`fs-update-${shape.id}`, 'firestore-write', 'update')
     },
     updateImmediate: async (shape: Shape) => {
       if (!isFirebaseEnabled || !db) return
       const database = db!
+      markStart(`fs-update-imm-${shape.id}`)
       const ref = doc(database, 'rooms', roomId, 'shapes', shape.id)
       const payload: Record<string, unknown> = {
         type: shape.type,
@@ -112,12 +121,15 @@ export function useFirestoreSync(
       await setDoc(ref, payload, { merge: true })
       // Update throttle marker so immediate write doesn't cause an immediate trailing throttled write
       lastWriteMs.current[shape.id] = Date.now()
+      markEnd(`fs-update-imm-${shape.id}`, 'firestore-write', 'updateImmediate')
     },
     remove: async (id: string) => {
       if (!isFirebaseEnabled || !db) return
       const database = db!
+      markStart(`fs-remove-${id}`)
       const ref = doc(database, 'rooms', roomId, 'shapes', id)
       await deleteDoc(ref)
+      markEnd(`fs-remove-${id}`, 'firestore-write', 'remove')
     },
   }), [roomId])
 
@@ -125,6 +137,7 @@ export function useFirestoreSync(
     if (!isFirebaseEnabled || !db) return
     const colRef = collection(db, 'rooms', roomId, 'shapes')
     const unsub: Unsubscribe = onSnapshot(colRef, (snap) => {
+      markStart('fs-snapshot')
       snap.docChanges().forEach((change) => {
         const data = change.doc.data() as Record<string, unknown>
         if (change.type === 'removed') {
@@ -149,6 +162,7 @@ export function useFirestoreSync(
           upsertRef.current(shape)
         }
       })
+      markEnd('fs-snapshot', 'firestore-read', `snapshot-${snap.docChanges().length}-changes`)
       if (!ready) setReady(true)
     })
     return () => unsub()

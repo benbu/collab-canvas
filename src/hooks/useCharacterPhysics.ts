@@ -1,5 +1,6 @@
 import type { Character, CharacterInput } from './useCharacterState'
 import type { Shape } from './useCanvasState'
+import { markStart, markEnd } from '../utils/performance'
 
 // Physics constants
 const GRAVITY = 800 // pixels/s²
@@ -122,6 +123,7 @@ export function updateCharacterPhysics(
   deltaTime: number,
   deathThreshold: number,
 ): Character {
+  markStart('char-physics')
   const char = { ...character }
 
   // Handle dying state
@@ -129,12 +131,15 @@ export function updateCharacterPhysics(
     const timer = (char.deathTimer ?? 0) + deltaTime
     if (timer >= 1.0) {
       // After 1 second, mark as dead
+      markEnd('char-physics', 'character-physics', 'dying')
       return { ...char, state: 'dead', deathTimer: timer }
     }
+    markEnd('char-physics', 'character-physics', 'dying')
     return { ...char, deathTimer: timer }
   }
 
   if (char.state === 'dead') {
+    markEnd('char-physics', 'character-physics', 'dead')
     return char
   }
 
@@ -172,6 +177,7 @@ export function updateCharacterPhysics(
   char.y += char.vy * deltaTime
 
   // Check collisions with all shapes
+  markStart('char-physics-collision')
   let collision: CollisionResult = { onGround: false }
   for (const shape of shapes) {
     let result: CollisionResult = { onGround: false }
@@ -191,6 +197,7 @@ export function updateCharacterPhysics(
       }
     }
   }
+  markEnd('char-physics-collision', 'character-physics', `collision-${shapes.length}-shapes`)
 
   // Apply collision result
   if (collision.onGround && collision.groundY !== undefined) {
@@ -207,6 +214,7 @@ export function updateCharacterPhysics(
     char.deathTimer = 0
   }
 
+  markEnd('char-physics', 'character-physics', 'update')
   return char
 }
 

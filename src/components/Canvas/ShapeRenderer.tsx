@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, memo } from 'react'
 import { Rect, Circle, Text } from 'react-konva'
 import type { Shape } from '../../hooks/useCanvasState'
 import ShapeEditor from './ShapeEditor'
@@ -31,7 +31,7 @@ interface ShapeRendererProps {
   stateById: Record<string, Shape>
 }
 
-export default function ShapeRenderer({
+const ShapeRenderer = memo(function ShapeRenderer({
   shape: s,
   isSelected,
   selectedIds,
@@ -296,5 +296,28 @@ export default function ShapeRenderer({
       )}
     </Fragment>
   )
-}
+}, (prevProps, nextProps) => {
+  // Only re-render if critical props change
+  // This significantly reduces re-renders during pan/zoom
+  return (
+    prevProps.shape.id === nextProps.shape.id &&
+    prevProps.shape.x === nextProps.shape.x &&
+    prevProps.shape.y === nextProps.shape.y &&
+    prevProps.shape.width === nextProps.shape.width &&
+    prevProps.shape.height === nextProps.shape.height &&
+    prevProps.shape.radius === nextProps.shape.radius &&
+    prevProps.shape.fill === nextProps.shape.fill &&
+    prevProps.shape.text === nextProps.shape.text &&
+    prevProps.shape.fontSize === nextProps.shape.fontSize &&
+    prevProps.shape.rotation === nextProps.shape.rotation &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.lockedByOther === nextProps.lockedByOther &&
+    prevProps.scale === nextProps.scale &&
+    prevProps.position.x === nextProps.position.x &&
+    prevProps.position.y === nextProps.position.y &&
+    prevProps.tool === nextProps.tool
+  )
+})
+
+export default ShapeRenderer
 
