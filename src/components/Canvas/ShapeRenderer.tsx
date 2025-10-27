@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, memo } from 'react'
 import { Rect, Circle, Text } from 'react-konva'
 import type { Shape } from '../../hooks/useCanvasState'
 import ShapeEditor from './ShapeEditor'
@@ -24,14 +24,20 @@ interface ShapeRendererProps {
   onEndEdit: (id: string) => void
   onWriterUpdate: (shape: Shape) => void
   onWriterUpdateImmediate: (shape: Shape) => void
+  onWriterUpdateDebounced?: (shape: Shape, delayMs?: number) => void
+  onWriterCancelPending?: (id: string) => void
   onDragStart?: () => void
   onDragMove?: (newX: number, newY: number) => void
   onDragEnd?: (newX: number, newY: number) => void
+  onShapeMouseEnter?: (shapeId: string) => void
+  onShapeMouseLeave?: () => void
+  onHandleMouseEnter?: (handleId: string) => void
+  onHandleMouseLeave?: () => void
   lastMouseRef: React.MutableRefObject<{ x: number; y: number } | null>
   stateById: Record<string, Shape>
 }
 
-export default function ShapeRenderer({
+const ShapeRenderer = memo(function ShapeRenderer({
   shape: s,
   isSelected,
   selectedIds,
@@ -49,9 +55,14 @@ export default function ShapeRenderer({
   onEndEdit,
   onWriterUpdate,
   onWriterUpdateImmediate,
+  onWriterCancelPending,
   onDragStart,
   onDragMove,
   onDragEnd,
+  onShapeMouseEnter,
+  onShapeMouseLeave,
+  onHandleMouseEnter,
+  onHandleMouseLeave,
   lastMouseRef,
   stateById,
 }: ShapeRendererProps) {
@@ -61,6 +72,17 @@ export default function ShapeRenderer({
     x: s.x,
     y: s.y,
     draggable: !lockedByOther,
+    onMouseEnter: () => {
+      // Only trigger hover in select or pan mode
+      if (tool === 'select' || tool === 'pan') {
+        onShapeMouseEnter?.(id)
+      }
+    },
+    onMouseLeave: () => {
+      if (tool === 'select' || tool === 'pan') {
+        onShapeMouseLeave?.()
+      }
+    },
     onDragStart: () => {
       if (lockedByOther) return
       onSetIsDraggingShape(true)
@@ -83,6 +105,7 @@ export default function ShapeRenderer({
       const newY = evt.target.y?.() ?? s.y
       const updated = { ...s, x: newX, y: newY }
       onUpdateShape(id, { x: newX, y: newY })
+      onWriterCancelPending && onWriterCancelPending(id)
       onWriterUpdateImmediate({ ...updated, selectedBy: stateById[id]?.selectedBy })
       onSetIsDraggingShape(false)
       onEndEdit(id)
@@ -142,6 +165,7 @@ export default function ShapeRenderer({
             const nextX = cX - w / 2
             const nextY = cY - h / 2
             onUpdateShape(id, { x: nextX, y: nextY })
+            onWriterCancelPending && onWriterCancelPending(id)
             onWriterUpdateImmediate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
             onSetIsDraggingShape(false)
             onEndEdit(id)
@@ -162,11 +186,14 @@ export default function ShapeRenderer({
           onCommit={() => {
             const latest = stateById[id]
             if (latest) {
+              onWriterCancelPending && onWriterCancelPending(id)
               onWriterUpdateImmediate({ ...latest, selectedBy: stateById[id]?.selectedBy } as any)
             }
           }}
           onBeginEdit={() => onBeginEdit(id)}
           onEndEdit={() => onEndEdit(id)}
+          onHandleMouseEnter={onHandleMouseEnter}
+          onHandleMouseLeave={onHandleMouseLeave}
         />
         {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
           <ShapeEditor
@@ -201,11 +228,14 @@ export default function ShapeRenderer({
           onCommit={() => {
             const latest = stateById[id]
             if (latest) {
+              onWriterCancelPending && onWriterCancelPending(id)
               onWriterUpdateImmediate({ ...latest, selectedBy: stateById[id]?.selectedBy } as any)
             }
           }}
           onBeginEdit={() => onBeginEdit(id)}
           onEndEdit={() => onEndEdit(id)}
+          onHandleMouseEnter={onHandleMouseEnter}
+          onHandleMouseLeave={onHandleMouseLeave}
         />
         {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
           <ShapeEditor
@@ -257,6 +287,7 @@ export default function ShapeRenderer({
           const nextX = cX - tw / 2
           const nextY = cY + th / 2
           onUpdateShape(id, { x: nextX, y: nextY })
+          onWriterCancelPending && onWriterCancelPending(id)
           onWriterUpdateImmediate({ ...s, x: nextX, y: nextY, selectedBy: stateById[id]?.selectedBy })
           onSetIsDraggingShape(false)
           onEndEdit(id)
@@ -277,11 +308,14 @@ export default function ShapeRenderer({
         onCommit={() => {
           const latest = stateById[id]
           if (latest) {
+            onWriterCancelPending && onWriterCancelPending(id)
             onWriterUpdateImmediate({ ...latest, selectedBy: stateById[id]?.selectedBy } as any)
           }
         }}
         onBeginEdit={() => onBeginEdit(id)}
         onEndEdit={() => onEndEdit(id)}
+        onHandleMouseEnter={onHandleMouseEnter}
+        onHandleMouseLeave={onHandleMouseLeave}
       />
       {s.selectedBy?.userId && s.selectedBy.userId !== selfId && (
         <ShapeEditor
@@ -296,5 +330,29 @@ export default function ShapeRenderer({
       )}
     </Fragment>
   )
-}
+}, (prevProps, nextProps) => {
+  // Only re-render if critical props change
+  // This significantly reduces re-renders during pan/zoom
+  return (
+    prevProps.shape.id === nextProps.shape.id &&
+    prevProps.shape.x === nextProps.shape.x &&
+    prevProps.shape.y === nextProps.shape.y &&
+    prevProps.shape.width === nextProps.shape.width &&
+    prevProps.shape.height === nextProps.shape.height &&
+    prevProps.shape.radius === nextProps.shape.radius &&
+    prevProps.shape.fill === nextProps.shape.fill &&
+    prevProps.shape.text === nextProps.shape.text &&
+    prevProps.shape.fontFamily === nextProps.shape.fontFamily &&
+    prevProps.shape.fontSize === nextProps.shape.fontSize &&
+    prevProps.shape.rotation === nextProps.shape.rotation &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.lockedByOther === nextProps.lockedByOther &&
+    prevProps.scale === nextProps.scale &&
+    prevProps.position.x === nextProps.position.x &&
+    prevProps.position.y === nextProps.position.y &&
+    prevProps.tool === nextProps.tool
+  )
+})
+
+export default ShapeRenderer
 

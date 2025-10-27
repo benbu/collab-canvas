@@ -38,7 +38,7 @@ export default function AiPromptBar({
         <input
           className="aiInput"
           type="text"
-          placeholder="AI Commands e.g. 'Create a circle'"
+          placeholder="AI Commands e.g. 'Make selected red', 'Duplicate selected by 20,20'"
           ref={promptInputRef}
           value={prompt}
           onChange={(e) => setPrompt(e.currentTarget.value)}

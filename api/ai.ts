@@ -13,14 +13,18 @@ async function handleWeb(req: Request): Promise<Response> {
   try {
     const body = await (req as any).json?.().catch?.(() => ({})) as Record<string, unknown> || {}
     const prompt = (body?.prompt as string) || ''
+    const messagesFromClient = Array.isArray((body as any)?.messages) ? (body as any).messages : null
     // Security: ignore client-provided tools and always use server-defined tools
     const tools = aiTools
     const context = body?.context ?? {}
     const model = (body?.model as string) || 'gpt-4o-mini'
     const temperature = typeof body?.temperature === 'number' ? (body?.temperature as number) : 0.2
 
-    if (!prompt || typeof prompt !== 'string') {
-      return new Response(JSON.stringify({ error: 'Invalid prompt' }), { status: 400, headers: { 'content-type': 'application/json' } })
+    const hasValidMessages = Array.isArray(messagesFromClient) && messagesFromClient.length > 0
+    if (!hasValidMessages) {
+      if (!prompt || typeof prompt !== 'string') {
+        return new Response(JSON.stringify({ error: 'Invalid prompt or messages' }), { status: 400, headers: { 'content-type': 'application/json' } })
+      }
     }
 
     const gatewayUrl = process.env.VERCEL_AI_GATEWAY_URL
@@ -28,17 +32,17 @@ async function handleWeb(req: Request): Promise<Response> {
       return new Response(JSON.stringify({ error: 'Missing VERCEL_AI_GATEWAY_URL' }), { status: 500, headers: { 'content-type': 'application/json' } })
     }
 
-    // server-side prompt truncation safeguard
+    // Build messages: prefer explicit messages if provided
     const MAX_PROMPT_CHARS = 4000
     const safePrompt = String(prompt).slice(0, MAX_PROMPT_CHARS)
-
+    const defaultMessages = [
+      { role: 'system', content: 'You translate user instructions into tool calls to manipulate a collaborative canvas. Prefer using target:\'selected\' for selection-based edits. Use find_shapes to disambiguate when ids are unknown.' },
+      { role: 'user', content: safePrompt },
+    ]
     const payload = {
       model,
       temperature,
-      messages: [
-        { role: 'system', content: 'You translate user instructions into tool calls to manipulate a collaborative canvas.' },
-        { role: 'user', content: safePrompt },
-      ],
+      messages: hasValidMessages ? messagesFromClient : defaultMessages,
       tools,
       tool_choice: 'auto',
       // Optionally pass minimal context to help the model
@@ -47,7 +51,6 @@ async function handleWeb(req: Request): Promise<Response> {
 
     const startedAt = Date.now()
     // basic request logging (no PII; timing + status)
-    // eslint-disable-next-line no-console
     console.log('[AI API] -> gateway request', { model, temperature })
 
     // Authorization strategy:
@@ -59,8 +62,7 @@ async function handleWeb(req: Request): Promise<Response> {
     if (gatewayToken) headers['authorization'] = `Bearer ${gatewayToken}`
     else if (openaiKey) headers['authorization'] = `Bearer ${openaiKey}`
     else {
-      // eslint-disable-next-line no-console
-      console.warn('[AI API] No Authorization configured. Configure provider key on the Gateway or set OPENAI_API_KEY.')
+      console.error('[AI API] No Authorization configured. Configure provider key on the Gateway or set OPENAI_API_KEY.')
     }
 
     const resp = await fetch(gatewayUrl, {
@@ -71,8 +73,7 @@ async function handleWeb(req: Request): Promise<Response> {
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => '')
-      // eslint-disable-next-line no-console
-      console.warn('[AI API] <- gateway error', { status: resp.status, durationMs: Date.now() - startedAt })
+      console.error('[AI API] <- gateway error', { status: resp.status, durationMs: Date.now() - startedAt })
       return new Response(JSON.stringify({ error: 'Upstream error', status: resp.status, body: text }), { status: 502, headers: { 'content-type': 'application/json' } })
     }
 
@@ -85,11 +86,9 @@ async function handleWeb(req: Request): Promise<Response> {
       data?.choices?.[0]?.delta?.tool_calls ||
       []
 
-    // eslint-disable-next-line no-console
     console.log('[AI API] <- gateway success', { toolCalls: Array.isArray(toolCalls) ? toolCalls.length : 0, durationMs: Date.now() - startedAt })
     return new Response(JSON.stringify({ tool_calls: toolCalls }), { status: 200, headers: { 'content-type': 'application/json' } })
   } catch (e: any) {
-    // eslint-disable-next-line no-console
     console.error('[AI API] unexpected error', { message: e?.message || String(e) })
     return new Response(JSON.stringify({ error: 'Unexpected error', message: e?.message || String(e) }), { status: 500, headers: { 'content-type': 'application/json' } })
   }

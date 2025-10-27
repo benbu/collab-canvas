@@ -34,7 +34,7 @@ function TestComponent(props: {
   useEffect(() => {
     if (props.mode === 'auto') {
       void (async () => {
-        const res = await hook.postPrompt(props.prompt)
+        const res = await hook.postPrompt(props.prompt, { selectedIds: ['a'] })
         setTimeout(() => {
           props.onDone(res)
         }, 0)
@@ -124,6 +124,26 @@ describe('useAiAssist', () => {
     const payload = onDone.mock.calls[0][0]
     expect(payload.ok).toBe(true)
     expect(payload.executed).toBe(1)
+  })
+
+  it('passes selectedIds in messages and supports update_shapes on selection', async () => {
+    // Mock server to return an update_shapes call that targets selection
+    global.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ tool_calls: [ { name: 'update_shapes', arguments: { target: 'selected', patch: { fill: '#ff0000' } } } ] }),
+        { status: 200, headers: { 'content-type': 'application/json' } } as any,
+      )
+    }) as any
+
+    const onDone = vi.fn()
+    const a: Shape = { id: 'a', type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#000' } as any
+    render(
+      <TestComponent prompt="make selected red" toolCalls={[]} onDone={onDone} mode="auto" state={{ byId: { a } }} />
+    )
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    const writers = (window as any).__writers
+    // Ensure update was attempted for selected id 'a'
+    expect(writers.update).toHaveBeenCalled()
   })
 })
 

@@ -252,4 +252,53 @@
   color: #6b7280;
 }
 
+/* Dynamic cursor classes */
+.cursor-hand {
+  cursor: grab;
+}
+
+.cursor-pan {
+  cursor: grab;
+}
+
+.cursor-text {
+  cursor: text;
+}
+
+.cursor-crosshair {
+  cursor: crosshair;
+}
+
+.cursor-nwse-resize {
+  cursor: nwse-resize;
+}
+
+.cursor-nesw-resize {
+  cursor: nesw-resize;
+}
+
+.cursor-ns-resize {
+  cursor: ns-resize;
+}
+
+.cursor-ew-resize {
+  cursor: ew-resize;
+}
+
+.cursor-grab {
+  cursor: grab;
+}
+
+.cursor-grabbing {
+  cursor: grabbing;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.cursor-default {
+  cursor: default;
+}
+
 

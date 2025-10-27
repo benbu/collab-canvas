@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { db, isFirebaseEnabled } from '../services/firebase'
-import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { rtdb as database, isFirebaseEnabled } from '../services/firebase'
+import { ref, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, serverTimestamp, update } from 'firebase/database'
 
 export type RemoteCursor = { id: string; x: number; y: number; color: string; name?: string; updatedAt: number }
 
@@ -17,48 +17,61 @@ export function useCursorSync(
   const lastWrite = useRef(0)
 
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
-    const colRef = collection(db, 'rooms', roomId, 'cursors')
-    const unsub = onSnapshot(colRef, (snap) => {
-      const next = { ...cursors }
-      snap.docChanges().forEach((c) => {
-        if (c.type === 'removed') delete next[c.doc.id]
-        else {
-          const d = c.doc.data() as any
-          next[c.doc.id] = {
-            id: c.doc.id,
-            x: d.x,
-            y: d.y,
-            color: d.color ?? '#888',
-            name: d.name,
-            updatedAt: d.updatedAt?.toMillis?.() ?? nowMs(),
-          }
-        }
-      })
-      setCursors(next)
+    if (!isFirebaseEnabled || !database) return
+    const listRef = ref(database!, `rooms/${roomId}/cursors`)
+    const next = { ...cursors }
+    const unsubAdd = onChildAdded(listRef, (s) => {
+      const d = s.val() as any
+      next[s.key as string] = {
+        id: s.key as string,
+        x: d.x,
+        y: d.y,
+        color: d.color ?? '#888',
+        name: d.name,
+        updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : nowMs(),
+      }
+      setCursors({ ...next })
     })
-    return () => unsub()
+    const unsubChange = onChildChanged(listRef, (s) => {
+      const d = s.val() as any
+      next[s.key as string] = {
+        id: s.key as string,
+        x: d.x,
+        y: d.y,
+        color: d.color ?? '#888',
+        name: d.name,
+        updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : nowMs(),
+      }
+      setCursors({ ...next })
+    })
+    const unsubRemove = onChildRemoved(listRef, (s) => {
+      delete next[s.key as string]
+      setCursors({ ...next })
+    })
+    return () => { unsubAdd(); unsubChange(); unsubRemove() }
   }, [roomId, setCursors])
 
   useEffect(() => {
-    if (!isFirebaseEnabled || !db) return
+    if (!isFirebaseEnabled || !database) return
     const onMove = () => {
       const p = getPointer()
       const t = nowMs()
       if (!p) return
       if (t - lastWrite.current < 80) return // ~12.5 fps
       lastWrite.current = t
-      const database = db!
-      const ref = doc(database, 'rooms', roomId, 'cursors', selfId)
-      void setDoc(
-        ref,
-        { x: p.x, y: p.y, updatedAt: serverTimestamp(), name: selfName, color: selfColor },
-        { merge: true },
-      )
+      const selfRef = ref(database!, `rooms/${roomId}/cursors/${selfId}`)
+      void update(selfRef, { x: p.x, y: p.y, updatedAt: serverTimestamp(), name: selfName, color: selfColor })
     }
     window.addEventListener('mousemove', onMove)
     return () => window.removeEventListener('mousemove', onMove)
   }, [roomId, selfId, getPointer, selfName, selfColor])
+
+  // Ensure ephemeral cursor is removed on disconnect
+  useEffect(() => {
+    if (!isFirebaseEnabled || !database) return
+    const selfRef = ref(database!, `rooms/${roomId}/cursors/${selfId}`)
+    try { onDisconnect(selfRef).remove() } catch {}
+  }, [roomId, selfId])
 
   const visibleCursors = useMemo(() => {
     const cutoff = nowMs() - 2000
